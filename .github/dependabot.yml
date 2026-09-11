@@ -24,6 +24,17 @@ updates:
     commit-message:
       prefix: "terraform"
     labels: ["dependencies", "terraform"]
+    # Major provider versions are a deliberate, manual decision here: the
+    # modules cap them on purpose (aws < 7.0, google < 8.0) because a major
+    # bump can change resource schemas under a deployed pipeline. Without this,
+    # Dependabot repeatedly tries the blocked major and the job fails with
+    # "Content didn't change!". Raise the cap in versions.tf when you have
+    # tested the new major, and this will start proposing patches again.
+    ignore:
+      - dependency-name: "hashicorp/google"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "hashicorp/aws"
+        update-types: ["version-update:semver-major"]
 
   # Base images for the Cloud Run adapter and the demo site container.
   - package-ecosystem: docker
