@@ -2,10 +2,14 @@ blank_issues_enabled: false
 contact_links:
   - name: Security vulnerability
     url: https://github.com/Obsero-ai/obsero-public/security/advisories/new
-    about: Report privately. Please do not open a public issue for a security problem.
-  - name: Question about integrating with Obsero
-    url: https://github.com/Obsero-ai/obsero-public/discussions
-    about: Ask here if you are not sure whether something is a bug.
+    about: >
+      Report privately — never in a public issue. If that page is unavailable,
+      email security@obsero.ai instead.
+  - name: Troubleshooting index
+    url: https://obsero-ai.github.io/obsero-public/troubleshooting.html
+    about: >
+      Symptom, cause, fix for both clouds. Most reported bugs are documented
+      behaviour of the underlying cloud service — please check here first.
   - name: Documentation
     url: https://obsero-ai.github.io/obsero-public/
-    about: The quickstart, the contract, per-cloud guides, and a troubleshooting index.
+    about: The quickstart, the event contract, and the per-cloud deployment guides.
