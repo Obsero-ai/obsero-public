@@ -1,0 +1,55 @@
+name: Feature request or new log source
+description: Propose a change, or a cloud/log source this repo does not cover yet.
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This repo is a **starting point, not a product**. The bar for a change is
+        "does this make the reference easier to adapt", not "does this add a
+        feature" — so proposals that add abstraction, plugins, or dependencies
+        are usually declined. New log sources are the most welcome thing here.
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What kind of proposal
+      options:
+        - A new cloud or log source (Cloudflare, Fastly, Akamai, bare origin, ...)
+        - A change to an existing adapter
+        - A change to the Terraform
+        - A change to setup.sh / destroy.sh
+        - Docs
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve
+      description: What you were trying to do, and where the repo left you stuck.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you propose
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you tried instead
+      description: >
+        Especially: could you already do this by calling `sendEvent` from your
+        own code? For anything outside AWS and GCP that is usually the whole
+        integration, and may be the right answer.
+
+  - type: checkboxes
+    id: contribute
+    attributes:
+      label: Are you offering to build it
+      options:
+        - label: I am willing to open a PR for this.

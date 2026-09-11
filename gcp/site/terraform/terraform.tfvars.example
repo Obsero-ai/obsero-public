@@ -1,0 +1,9 @@
+# Copy to terraform.tfvars and fill in. terraform.tfvars is gitignored.
+
+project_id        = "your-project-id"
+obsero_site_token = "your-site-token"
+
+# Optional:
+# obsero_ingest_url = "https://analytics.obsero.ai/v1/events"
+# region            = "us-central1"
+# name_prefix       = "agent-analytics-mock-site"

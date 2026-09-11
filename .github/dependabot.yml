@@ -1,0 +1,38 @@
+version: 2
+updates:
+  # GitHub Actions used by CI and the Pages deploy.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: "ci"
+    labels: ["dependencies", "ci"]
+
+  # Terraform providers, per module. There is no application dependency manifest
+  # in this repo — obsero.mjs and both adapters are deliberately dependency-free.
+  - package-ecosystem: terraform
+    directories:
+      - /aws/ingestion
+      - /aws/site/terraform
+      - /gcp/ingestion
+      - /gcp/site/terraform
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: "terraform"
+    labels: ["dependencies", "terraform"]
+
+  # Base images for the Cloud Run adapter and the demo site container.
+  - package-ecosystem: docker
+    directories:
+      - /gcp/ingestion/adapter
+      - /gcp/site
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: "docker"
+    labels: ["dependencies", "docker"]

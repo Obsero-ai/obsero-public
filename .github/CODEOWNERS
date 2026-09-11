@@ -1,0 +1,20 @@
+# Every PR requires a review from a code owner.
+# Docs: https://docs.github.com/articles/about-code-owners
+#
+# Replace @sujancode with an org team (e.g. @Obsero-ai/maintainers) once one exists.
+
+*                       @sujancode
+
+# The contract. Changing this changes what every integration must produce.
+/obsero.mjs             @sujancode
+
+# Infrastructure — review for least privilege and for the silently-load-bearing
+# arguments called out in AGENTS.md.
+/aws/ingestion/         @sujancode
+/gcp/ingestion/         @sujancode
+
+# Repo plumbing, CI, and the published docs site.
+/.github/               @sujancode
+/docs/                  @sujancode
+/LICENSE                @sujancode
+/SECURITY.md            @sujancode

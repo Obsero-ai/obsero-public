@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Troubleshooting&nbsp;&nbsp;|&nbsp;&nbsp;Obsero ingestion</title>
+<meta name="description" content="Symptom, cause, fix for both clouds. Most reported bugs are documented behaviour of the underlying service.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&amp;family=Roboto+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/docs.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='10' fill='%231a73e8'/%3E%3Ccircle cx='12' cy='12' r='4' fill='white'/%3E%3C/svg%3E">
+</head>
+<body>
+<a class="skip" href="#main">Skip to main content</a>
+
+<header class="topbar">
+  <button class="iconbtn" id="nav-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="sidenav">
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/></svg>
+  </button>
+  <a class="product" href="index.html"><b>Obsero ingestion</b> <span>Documentation</span></a>
+  <div class="topbar-end">
+    <a class="topbar-link" href="contract.html">The contract</a>
+    <a class="topbar-link" href="https://github.com/Obsero-ai/obsero-public">GitHub</a>
+  </div>
+</header>
+
+<div class="scrim" hidden-desktop></div>
+
+<div class="shell">
+<nav class="sidenav" id="sidenav" aria-label="Documentation">
+  <div class="navsearch">
+    <input id="navsearch-input" type="search" placeholder="Search docs" aria-label="Search the documentation" autocomplete="off" spellcheck="false">
+  </div>
+  <div id="navresults" class="navresults" hidden></div>
+  <div id="navtree">
+    <div class="navgroup">Get started</div>
+    <ul>
+      <li><a class="navitem" href="index.html">Overview</a>
+      </li>
+      <li><a class="navitem" href="quickstart.html">Quickstart</a>
+      </li>
+    </ul>
+    <div class="navgroup">Reference</div>
+    <ul>
+      <li><a class="navitem" href="contract.html">The contract</a>
+      </li>
+    </ul>
+    <div class="navgroup">Deployment guides</div>
+    <ul>
+      <li><a class="navitem" href="aws.html">AWS</a>
+      </li>
+      <li><a class="navitem" href="gcp.html">GCP</a>
+      </li>
+    </ul>
+    <div class="navgroup">Support</div>
+    <ul>
+      <li><a class="navitem current" href="troubleshooting.html" aria-current="page">Troubleshooting</a>
+        <ul class="subnav">
+          <li><a href="#order">Work down this list first</a></li>
+          <li><a href="#either-cloud">Either cloud</a></li>
+          <li><a href="#aws">AWS</a></li>
+          <li><a href="#gcp">GCP</a></li>
+          <li><a href="#notes">Where the measured behaviour lives</a></li>
+        </ul>
+      </li>
+    </ul>
+  </div>
+</nav>
+
+  <div class="content">
+    <article id="main">
+      <nav class="breadcrumb" aria-label="Breadcrumb">
+        <a href="index.html">Obsero ingestion</a> <span aria-hidden="true">&rsaquo;</span> <span>Support</span> <span aria-hidden="true">&rsaquo;</span> <span>Troubleshooting</span>
+      </nav>
+
+
+<h1>Troubleshooting</h1>
+<p class="lede">Symptom, cause, fix. Most of what gets reported as a bug here is documented
+behaviour of the underlying service.</p>
+
+<h2 id="order"><a class="anchor" href="#order" aria-label="Link to this section">#</a>Work down this list first</h2>
+
+<p>In order. Do not skip to Terraform.</p>
+
+<ol>
+<li><code>cd &lt;cloud&gt; &amp;&amp; make test</code> &mdash; does the adapter still produce a valid
+payload? Needs no cloud account. If this fails, nothing downstream matters.</li>
+<li><code>./setup.sh &lt;cloud&gt; status</code> &mdash; what is actually deployed, including
+resources that fell out of Terraform state.</li>
+<li><code>node obsero.mjs --token &lt;id&gt; --domain &lt;host&gt;</code> &mdash; is the tracking ID
+accepted? A rejected token means the pipeline forwards into nothing, <em>silently</em>.</li>
+<li><code>make -C &lt;cloud&gt; logs</code> &mdash; is the adapter being invoked, and what does it
+say?</li>
+<li>Then the tables below.</li>
+</ol>
+
+<h2 id="either-cloud"><a class="anchor" href="#either-cloud" aria-label="Link to this section">#</a>Either cloud</h2>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Symptom</th><th>Cause</th><th>Fix</th></tr></thead>
+<tbody>
+<tr>
+  <td>Analytics shows one page per query string</td>
+  <td><code>path</code> is being sent with the query string on it</td>
+  <td>Send the path only. <code>buildEvent</code> strips it for you; a custom parser must too. This is the most common mistake by far.</td>
+</tr>
+<tr>
+  <td>Duplicate events</td>
+  <td>Delivery is at-least-once on both clouds</td>
+  <td>Expected. One failed event fails its whole batch, which is retried, duplicating what already landed.</td>
+</tr>
+<tr>
+  <td>Nothing arrives and nothing errors</td>
+  <td>Often a rejected tracking ID</td>
+  <td><code>node obsero.mjs --token &lt;id&gt; --domain &lt;host&gt;</code>. One second to rule out.</td>
+</tr>
+<tr>
+  <td><code>setup.sh</code> step 2 refuses to apply</td>
+  <td>The tracking ID in <code>terraform.tfvars</code> is still the placeholder <code>set-in-step-2</code></td>
+  <td>Run step 2 and enter a real ID, or <code>./setup.sh &lt;cloud&gt; pipeline --token &lt;id&gt;</code>.</td>
+</tr>
+<tr>
+  <td><code>sec-fetch-mode</code> is <code>cors</code>, and <code>connection: keep-alive</code> appeared</td>
+  <td>Node's <code>fetch</code> overrides both</td>
+  <td>Harness artefact only. Every User-Agent and every other header passes through untouched.</td>
+</tr>
+<tr>
+  <td>A resource survives <code>terraform destroy</code></td>
+  <td>Partial destroy, or lost state &mdash; neither shows up in a plan</td>
+  <td><code>./destroy.sh &lt;cloud&gt; --check</code> reports them with the exact command to remove each; <code>--sweep</code> runs those commands.</td>
+</tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="aws"><a class="anchor" href="#aws" aria-label="Link to this section">#</a>AWS</h2>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Symptom</th><th>Cause</th><th>Fix</th></tr></thead>
+<tbody>
+<tr>
+  <td>Nothing arrives, everything reports healthy, Kinesis <code>IncomingRecords</code> is 0</td>
+  <td>The <code>LogDeliveryEnabled = true</code> tag is missing from the Firehose stream (standard mode)</td>
+  <td>The module applies it automatically. If someone hand-built the stream, add it. There is <strong>no error message for this anywhere</strong>.</td>
+</tr>
+<tr>
+  <td>Nothing yet, and the deploy finished under a minute ago</td>
+  <td>The 60&ndash;90s latency floor</td>
+  <td>Wait. CloudFront flushes continuously but Firehose buffers for at least 60s, and that is not a knob.</td>
+</tr>
+<tr>
+  <td>10 of 30 requests missing, no pattern by status, path, client or latency (realtime)</td>
+  <td>CloudFront delivers real-time logs <strong>best-effort</strong></td>
+  <td>Not a bug and not fixable from here. Treat counts as a high-fidelity sample, never a ledger. Do not reconcile against origin logs or bill on them.</td>
+</tr>
+<tr>
+  <td>Every column in a parsed record is shifted (realtime)</td>
+  <td>CloudFront emits fields in <em>its own</em> canonical order, ignoring the log config, with no header row</td>
+  <td>The module sorts <code>log_fields</code> canonically and hands the same list to the adapter; <code>log_fields_in_order</code> exports it. Never trust the config order positionally.</td>
+</tr>
+<tr>
+  <td>No <code>signature-agent</code> / <code>signature-input</code> / <code>signature</code> ever arrives</td>
+  <td><code>log_source = "standard"</code>. Standard logging v2 has no <code>cs-headers</code> field.</td>
+  <td>Switch to <code>realtime</code>. Not a config tweak &mdash; a different log source, at a ~$11/mo floor.</td>
+</tr>
+<tr>
+  <td>Adapter returns 429; events land in the backup bucket</td>
+  <td>Lambda concurrency exhausted &mdash; new accounts cap at 10 account-wide, and at that ceiling <code>reserved_concurrent_executions</code> cannot be set at all</td>
+  <td>Nothing is lost; replay the backup bucket. Watch <code>Throttles</code> on the adapter.</td>
+</tr>
+<tr>
+  <td><code>terraform destroy</code> refuses to delete a bucket</td>
+  <td>It holds objects Terraform did not create &mdash; exactly what the backup bucket collects</td>
+  <td>Use <code>./destroy.sh aws</code>, which empties it first. The module keeps <code>backup_force_destroy = false</code> on purpose, so a real destroy <em>stops</em> rather than discarding events that never reached Obsero.</td>
+</tr>
+<tr>
+  <td>A CloudFront distribution survives the destroy</td>
+  <td>CloudFront needs two operations, minutes apart</td>
+  <td>Disable it, wait for <code>Deployed</code>, then delete. <code>destroy.sh</code> reports it rather than pretending it can be done in one pass.</td>
+</tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="gcp"><a class="anchor" href="#gcp" aria-label="Link to this section">#</a>GCP</h2>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Symptom</th><th>Cause</th><th>Fix</th></tr></thead>
+<tbody>
+<tr>
+  <td>There are no LB request logs at all</td>
+  <td>The origin is a backend <strong>bucket</strong>. <code>BackendBucket</code> has no <code>logConfig</code> field in the Compute v1 API.</td>
+  <td>The origin has to become a backend <strong>service</strong> &mdash; Cloud Run, GKE, a MIG. No config change fixes this.</td>
+</tr>
+<tr>
+  <td>Events arrive with no headers to classify on, and <code>terraform plan</code> says &ldquo;No changes&rdquo;</td>
+  <td>The allow-list was wiped by a destroy-time provisioner during a replacement. Terraform cannot see a field it does not model.</td>
+  <td>Already fixed as two resources: <code>terraform_data.request_logging</code> re-installs on every apply, <code>..._cleanup</code> fires only on destroy. <strong>Do not remove the every-apply change to quiet the plan.</strong></td>
+</tr>
+<tr>
+  <td>Headerless events for a few minutes after an apply</td>
+  <td>Config propagation to the edge</td>
+  <td>Wait. Measured: headerless at ~60s, all headers present at ~10 minutes.</td>
+</tr>
+<tr>
+  <td><code>gcloud logging read</code> returns nothing for the load balancer</td>
+  <td><code>exclude_from_default_bucket</code> is working &mdash; entries are routed but never stored</td>
+  <td>That is the intended saving. <strong>Pub/Sub is the only place to read raw entries.</strong> Pull the verify subscription instead of <code>make sample</code>.</td>
+</tr>
+<tr>
+  <td>The sink exists but publishes nothing</td>
+  <td>The writer identity lacks publisher on the topic</td>
+  <td>Needs <code>roles/pubsub.admin</code> at apply time &mdash; <code>pubsub.editor</code> does not cover <code>pubsub.topics.setIamPolicy</code>.</td>
+</tr>
+<tr>
+  <td><code>terraform apply</code> fails at the sink</td>
+  <td><code>roles/logging.configWriter</code> missing</td>
+  <td>Editor does not imply it. <a href="gcp.html#permissions">See the roles table &rarr;</a></td>
+</tr>
+<tr>
+  <td>Adding an eleventh logged header is rejected</td>
+  <td>The API caps <code>loggingHttpRequestHeaders</code> at 10</td>
+  <td>Decide which one to drop. <code>user-agent</code>, <code>referer</code> and the client IP arrive as first-class fields anyway, so never spend a slot on those.</td>
+</tr>
+<tr>
+  <td>The container image build fails</td>
+  <td>Missing <code>docker</code>, or an unconfigured credential helper</td>
+  <td>The build is deliberately local &mdash; Cloud Build's default compute service account cannot read its own staging bucket in a default project. Or set <code>adapter_image</code> to skip the build.</td>
+</tr>
+<tr>
+  <td><code>terraform destroy</code> prompts for <code>project_id</code></td>
+  <td>It has no default</td>
+  <td>Keep it in <code>gcp/site/terraform/terraform.tfvars</code>. <code>destroy.sh</code> checks for it up front.</td>
+</tr>
+<tr>
+  <td>A service account survives <code>--sweep</code></td>
+  <td>Service account IDs cap at 30 characters, so the module truncates the prefix to 21</td>
+  <td>A name match on the full prefix misses them. <code>destroy.sh</code> already truncates the same way; pass <code>--prefix</code> if you renamed things.</td>
+</tr>
+<tr>
+  <td>An external LB cannot be created at all</td>
+  <td>Org policy</td>
+  <td>Only project-level IAM is visible locally; org constraints surface at apply time. The other likely one is <code>constraints/iam.disableServiceAccountKeyCreation</code>.</td>
+</tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="notes"><a class="anchor" href="#notes" aria-label="Link to this section">#</a>Where the measured behaviour lives</h2>
+
+<p><code>aws/NOTES.md</code> and <code>gcp/NOTES.md</code> record behaviour observed on live
+deployments rather than inferred from docs. They are separate from the READMEs because none of it is
+needed to <em>use</em> the modules &mdash; only to trust their numbers, or to hand-build a pipeline
+yourself.</p>
+
+<p>If you measure something new, add it there as well as here.</p>
+
+
+      <div class="helpful">
+        <span>Was this page helpful?</span>
+        <span class="thumbs">
+          <a class="thumb" href="https://github.com/Obsero-ai/obsero-public/issues/new?title=Docs:+Troubleshooting" aria-label="Yes, this page was helpful"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M1 21h4V9H1v12zm22-11c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.59 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-2z"/></svg></a>
+          <a class="thumb" href="https://github.com/Obsero-ai/obsero-public/issues/new?title=Docs:+Troubleshooting" aria-label="No, this page needs work"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3H6c-.83 0-1.54.5-1.84 1.22l-3.02 7.05c-.09.23-.14.47-.14.73v2c0 1.1.9 2 2 2h6.31l-.95 4.57-.03.32c0 .41.17.79.44 1.06L9.83 23l6.59-6.59c.36-.36.58-.86.58-1.41V5c0-1.1-.9-2-2-2zm4 0v12h4V3h-4z"/></svg></a>
+        </span>
+      </div>
+
+      <nav class="nextprev" aria-label="Pagination">
+        <a href="gcp.html">&larr; GCP</a>
+        <span class="spacer"></span>
+      </nav>
+    </article>
+
+      <aside class="toc">
+        <div class="toc-inner">
+          <h2>On this page</h2>
+          <ul>
+          <li><a href="#order">Work down this list first</a></li>
+          <li><a href="#either-cloud">Either cloud</a></li>
+          <li><a href="#aws">AWS</a></li>
+          <li><a href="#gcp">GCP</a></li>
+          <li><a href="#notes">Where the measured behaviour lives</a></li>
+          </ul>
+        </div>
+      </aside>
+
+    <div class="pagefoot">
+      <p>Reference implementations for streaming CDN request logs to Obsero &mdash; a starting point, not a product. Fork it and keep the parts that match your stack. <a href="https://github.com/Obsero-ai/obsero-public">Source on GitHub</a>.</p>
+      <p>Measured numbers on these pages come from live deployments and are recorded in each cloud's <code>NOTES.md</code>. Confirm current cloud pricing before quoting any cost figure.</p>
+    </div>
+  </div>
+</div>
+
+<script src="assets/search-index.js" defer></script>
+<script src="assets/docs.js" defer></script>
+</body>
+</html>

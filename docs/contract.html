@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The contract&nbsp;&nbsp;|&nbsp;&nbsp;Obsero ingestion</title>
+<meta name="description" content="The URL you POST to and the payload Obsero expects. The only thing you have to get right.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&amp;family=Roboto+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/docs.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='10' fill='%231a73e8'/%3E%3Ccircle cx='12' cy='12' r='4' fill='white'/%3E%3C/svg%3E">
+</head>
+<body>
+<a class="skip" href="#main">Skip to main content</a>
+
+<header class="topbar">
+  <button class="iconbtn" id="nav-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="sidenav">
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/></svg>
+  </button>
+  <a class="product" href="index.html"><b>Obsero ingestion</b> <span>Documentation</span></a>
+  <div class="topbar-end">
+    <a class="topbar-link" href="contract.html">The contract</a>
+    <a class="topbar-link" href="https://github.com/Obsero-ai/obsero-public">GitHub</a>
+  </div>
+</header>
+
+<div class="scrim" hidden-desktop></div>
+
+<div class="shell">
+<nav class="sidenav" id="sidenav" aria-label="Documentation">
+  <div class="navsearch">
+    <input id="navsearch-input" type="search" placeholder="Search docs" aria-label="Search the documentation" autocomplete="off" spellcheck="false">
+  </div>
+  <div id="navresults" class="navresults" hidden></div>
+  <div id="navtree">
+    <div class="navgroup">Get started</div>
+    <ul>
+      <li><a class="navitem" href="index.html">Overview</a>
+      </li>
+      <li><a class="navitem" href="quickstart.html">Quickstart</a>
+      </li>
+    </ul>
+    <div class="navgroup">Reference</div>
+    <ul>
+      <li><a class="navitem current" href="contract.html" aria-current="page">The contract</a>
+        <ul class="subnav">
+          <li><a href="#the-request">The request</a></li>
+          <li><a href="#headers">Headers worth carrying</a></li>
+          <li><a href="#obsero-mjs">obsero.mjs — the whole contract in one file</a></li>
+          <li><a href="#validate">Check it before you ship it</a></li>
+          <li><a href="#adapting">Adapting an adapter</a></li>
+          <li><a href="#tracking-id">Getting a tracking ID</a></li>
+        </ul>
+      </li>
+    </ul>
+    <div class="navgroup">Deployment guides</div>
+    <ul>
+      <li><a class="navitem" href="aws.html">AWS</a>
+      </li>
+      <li><a class="navitem" href="gcp.html">GCP</a>
+      </li>
+    </ul>
+    <div class="navgroup">Support</div>
+    <ul>
+      <li><a class="navitem" href="troubleshooting.html">Troubleshooting</a>
+      </li>
+    </ul>
+  </div>
+</nav>
+
+  <div class="content">
+    <article id="main">
+      <nav class="breadcrumb" aria-label="Breadcrumb">
+        <a href="index.html">Obsero ingestion</a> <span aria-hidden="true">&rsaquo;</span> <span>Reference</span> <span aria-hidden="true">&rsaquo;</span> <span>The contract</span>
+      </nav>
+
+
+<h1>The contract</h1>
+<p class="lede">The URL you POST to, and the payload. Everything else is yours to decide.</p>
+
+<p>Which cloud, which log source, which language, whether you buffer or send per request, whether
+you use Terraform at all &mdash; none of that is part of the contract. This page is.</p>
+
+<h2 id="the-request"><a class="anchor" href="#the-request" aria-label="Link to this section">#</a>The request</h2>
+
+<figure class="snippet">
+<figcaption>one event per HTTP request</figcaption>
+<pre><code>POST https://analytics-staging.obsero.ai/v1/events
+
+content-type:     application/json
+x-obsero-domain:  acme.com          <span class="c"># which site this event belongs to</span>
+x-obsero-key:     &lt;tracking ID&gt;     <span class="c"># proves you own it</span>
+
+{
+  "path": "/pricing",
+  "method": "GET",
+  "statusCode": 200,
+  "headers": {
+    "host": "acme.com",
+    "user-agent": "Mozilla/5.0 ...; compatible; ChatGPT-User/1.0; +https://openai.com/bot",
+    "accept": "*/*",
+    "signature-agent": "\"https://chatgpt.com\"",
+    "signature-input": "sig1=(\"@authority\" \"signature-agent\");created=...",
+    "signature": "sig1=:...:"
+  }
+}</code></pre>
+</figure>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>field</th><th>rules</th></tr></thead>
+<tbody>
+<tr><td><code>path</code></td><td>Path <strong>only</strong>. <code>/pricing</code>, never
+<code>/pricing?ref=x</code> and never a full URL. Leaving the query string on makes every distinct
+URL its own page in the analytics &mdash; the most common mistake by far.</td></tr>
+<tr><td><code>method</code></td><td>Uppercase. <code>"GET"</code>.</td></tr>
+<tr><td><code>statusCode</code></td><td>A number, not a string. <code>200</code>.</td></tr>
+<tr><td><code>headers</code></td><td>Lowercase names &rarr; verbatim values. This is what
+classification runs on, so send as many as you can get.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="headers"><a class="anchor" href="#headers" aria-label="Link to this section">#</a>Headers worth carrying</h2>
+
+<p>Roughly in order of value:</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>header</th><th>what it buys you</th></tr></thead>
+<tbody>
+<tr><td><code>user-agent</code></td><td>everything starts here</td></tr>
+<tr><td><code>from</code></td><td>GPTBot, Googlebot</td></tr>
+<tr><td><code>signature-agent</code>, <code>signature-input</code>, <code>signature</code></td><td>Web Bot Auth &mdash; <strong>proves</strong> an agent is who it claims to be, rather than taking a User-Agent at face value</td></tr>
+<tr><td><code>accept</code>, <code>accept-language</code></td><td>browsers vs <code>*/*</code> bots</td></tr>
+<tr><td><code>sec-ch-ua</code>, <code>sec-ch-ua-platform</code>, <code>sec-ch-ua-mobile</code></td><td>client hints &mdash; browsers only</td></tr>
+<tr><td><code>sec-fetch-dest</code>, <code>sec-fetch-mode</code>, <code>sec-fetch-site</code></td><td>presence alone is the signal</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="aside warning" role="note"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg><div class="body">
+  <p><b class="label">Never forward these</b></p>
+  <p><code>authorization</code>, <code>cookie</code>, <code>set-cookie</code>. Both adapters strip
+  them before anything leaves your account. Keep that behaviour if you rewrite one.</p>
+</div></div>
+<h2 id="obsero-mjs"><a class="anchor" href="#obsero-mjs" aria-label="Link to this section">#</a>obsero.mjs &mdash; the whole contract in one file</h2>
+
+<p>Dependency-free, about 150 lines: <code>buildEvent</code>, <code>sendEvent</code>,
+<code>validateEvent</code>. Run it to send a test event and confirm your tracking ID works before
+you deploy anything:</p>
+
+<pre><code>node obsero.mjs --token &lt;tracking-id&gt; --domain acme.com</code></pre>
+
+<p>Then, in your own code, this is genuinely all it takes:</p>
+
+<figure class="snippet">
+<figcaption>the entire integration</figcaption>
+<pre><code>import { buildEvent, sendEvent } from "./obsero.mjs";
+
+await sendEvent(
+  buildEvent({
+    path: req.url,
+    method: req.method,
+    statusCode: res.statusCode,
+    headers: req.headers,
+  }),
+  { token: process.env.OBSERO_SITE_TOKEN, domain: "acme.com" },
+);</code></pre>
+</figure>
+
+<p>If you can call that from your edge middleware, your origin server or your log processor, you
+are done. You do not need anything else in this repo &mdash; and if you are on Cloudflare, Fastly,
+Akamai or a bare origin, this <em>is</em> the integration. Do not port a cloud directory you do not
+need.</p>
+
+<p><code>buildEvent</code> does the two things that are easy to get wrong for you: it strips the
+query string from <code>path</code> (and tolerates being handed an absolute URL), and it lowercases,
+trims and filters the headers.</p>
+
+<h2 id="validate"><a class="anchor" href="#validate" aria-label="Link to this section">#</a>Check it before you ship it</h2>
+
+<p><code>validateEvent</code> is the machine-checkable form of everything on this page. It returns a
+list of problems, empty when the payload is good:</p>
+
+<pre><code>cd aws            <span class="c"># or gcp</span>
+make test</code></pre>
+
+<p>That runs the <strong>real</strong> adapter parser over sample log lines and checks each
+resulting payload against <code>validateEvent</code>. No cloud account needed. If it passes, Obsero
+will accept what you produce.</p>
+
+<h2 id="adapting"><a class="anchor" href="#adapting" aria-label="Link to this section">#</a>Adapting an adapter</h2>
+
+<p>Both adapters have the same three-part shape, and only one part is the contract:</p>
+
+<pre><code>1. THE CONTRACT     build the payload and POST it     <span class="c">&lt;- keep this</span>
+2. LOG PARSING      log line/entry -&gt; event           <span class="c">&lt;- yours to rewrite</span>
+3. TRANSPORT        unwrap the batch, ack it          <span class="c">&lt;- yours to rewrite</span></code></pre>
+
+<ul>
+<li><code>aws/ingestion/lambda/adapter/index.mjs</code></li>
+<li><code>gcp/ingestion/adapter/index.mjs</code></li>
+</ul>
+
+<p>Change parts 2 and 3 to match your log source, leave part 1 alone, then run
+<code>make test</code>. Fixtures live in each cloud's <code>test/adapter.test.mjs</code> &mdash; add
+one for any new log shape rather than testing against live traffic.</p>
+
+<h2 id="tracking-id"><a class="anchor" href="#tracking-id" aria-label="Link to this section">#</a>Getting a tracking ID</h2>
+
+<p>Ask Obsero for one, then keep it out of the repo. Both <code>site/terraform/</code> directories
+read it from a gitignored <code>terraform.tfvars</code>:</p>
+
+<pre><code>obsero_site_token = "..."</code></pre>
+
+<p><code>setup.sh</code> writes that file for you, <code>chmod 600</code>. The deployed adapters
+read <code>x-obsero-domain</code> off each request's own Host header, so there is no domain to
+configure &mdash; only the token.</p>
+
+
+      <div class="helpful">
+        <span>Was this page helpful?</span>
+        <span class="thumbs">
+          <a class="thumb" href="https://github.com/Obsero-ai/obsero-public/issues/new?title=Docs:+The+contract" aria-label="Yes, this page was helpful"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M1 21h4V9H1v12zm22-11c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.59 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-2z"/></svg></a>
+          <a class="thumb" href="https://github.com/Obsero-ai/obsero-public/issues/new?title=Docs:+The+contract" aria-label="No, this page needs work"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3H6c-.83 0-1.54.5-1.84 1.22l-3.02 7.05c-.09.23-.14.47-.14.73v2c0 1.1.9 2 2 2h6.31l-.95 4.57-.03.32c0 .41.17.79.44 1.06L9.83 23l6.59-6.59c.36-.36.58-.86.58-1.41V5c0-1.1-.9-2-2-2zm4 0v12h4V3h-4z"/></svg></a>
+        </span>
+      </div>
+
+      <nav class="nextprev" aria-label="Pagination">
+        <a href="quickstart.html">&larr; Quickstart</a>
+        <a href="aws.html">AWS &rarr;</a>
+      </nav>
+    </article>
+
+      <aside class="toc">
+        <div class="toc-inner">
+          <h2>On this page</h2>
+          <ul>
+          <li><a href="#the-request">The request</a></li>
+          <li><a href="#headers">Headers worth carrying</a></li>
+          <li><a href="#obsero-mjs">obsero.mjs — the whole contract in one file</a></li>
+          <li><a href="#validate">Check it before you ship it</a></li>
+          <li><a href="#adapting">Adapting an adapter</a></li>
+          <li><a href="#tracking-id">Getting a tracking ID</a></li>
+          </ul>
+        </div>
+      </aside>
+
+    <div class="pagefoot">
+      <p>Reference implementations for streaming CDN request logs to Obsero &mdash; a starting point, not a product. Fork it and keep the parts that match your stack. <a href="https://github.com/Obsero-ai/obsero-public">Source on GitHub</a>.</p>
+      <p>Measured numbers on these pages come from live deployments and are recorded in each cloud's <code>NOTES.md</code>. Confirm current cloud pricing before quoting any cost figure.</p>
+    </div>
+  </div>
+</div>
+
+<script src="assets/search-index.js" defer></script>
+<script src="assets/docs.js" defer></script>
+</body>
+</html>

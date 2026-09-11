@@ -1,0 +1,65 @@
+name: Deploy docs to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    # Only rebuild when the site or its generator actually changes.
+    paths:
+      - 'docs/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deploy at a time. Do not cancel a run mid-deploy: unlike CI, cancelling
+# here can leave the published site half-updated.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # The site is committed prebuilt, so this is a drift check, not a build
+      # step: regenerating must not change anything. Same gate as CI, repeated
+      # here so a direct push to main can never publish a stale site.
+      - name: Verify the committed site matches its source
+        run: |
+          python3 docs/build.py
+          if ! git diff --exit-code --stat; then
+            echo "::error::docs/ is out of date. Run 'python3 docs/build.py' and commit the result."
+            exit 1
+          fi
+
+      # docs/.nojekyll is committed, which stops GitHub from running Jekyll and
+      # from dropping files and directories whose names begin with an underscore.
+      - name: Confirm .nojekyll is present
+        run: test -f docs/.nojekyll
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/
+
+  deploy:
+    name: Deploy
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,11 @@
+
+# terraform
+.terraform/
+.build/
+*.tfstate
+*.tfstate.*
+tfplan
+terraform.tfvars
+
+# test runs
+test/.runs/

@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quickstart&nbsp;&nbsp;|&nbsp;&nbsp;Obsero ingestion</title>
+<meta name="description" content="One command: deploy a mock site, create the ingestion pipeline with your tracking ID, then tear it all down.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&amp;family=Roboto+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/docs.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='10' fill='%231a73e8'/%3E%3Ccircle cx='12' cy='12' r='4' fill='white'/%3E%3C/svg%3E">
+</head>
+<body>
+<a class="skip" href="#main">Skip to main content</a>
+
+<header class="topbar">
+  <button class="iconbtn" id="nav-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="sidenav">
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/></svg>
+  </button>
+  <a class="product" href="index.html"><b>Obsero ingestion</b> <span>Documentation</span></a>
+  <div class="topbar-end">
+    <a class="topbar-link" href="contract.html">The contract</a>
+    <a class="topbar-link" href="https://github.com/Obsero-ai/obsero-public">GitHub</a>
+  </div>
+</header>
+
+<div class="scrim" hidden-desktop></div>
+
+<div class="shell">
+<nav class="sidenav" id="sidenav" aria-label="Documentation">
+  <div class="navsearch">
+    <input id="navsearch-input" type="search" placeholder="Search docs" aria-label="Search the documentation" autocomplete="off" spellcheck="false">
+  </div>
+  <div id="navresults" class="navresults" hidden></div>
+  <div id="navtree">
+    <div class="navgroup">Get started</div>
+    <ul>
+      <li><a class="navitem" href="index.html">Overview</a>
+      </li>
+      <li><a class="navitem current" href="quickstart.html" aria-current="page">Quickstart</a>
+        <ul class="subnav">
+          <li><a href="#before-you-start">Before you start</a></li>
+          <li><a href="#zero-cost-first">Two checks that cost nothing</a></li>
+          <li><a href="#the-three-steps">The three steps</a></li>
+          <li><a href="#watch-it-work">Watch it work</a></li>
+          <li><a href="#non-interactive">Without the menu</a></li>
+          <li><a href="#what-setup-does">What setup.sh is actually doing</a></li>
+        </ul>
+      </li>
+    </ul>
+    <div class="navgroup">Reference</div>
+    <ul>
+      <li><a class="navitem" href="contract.html">The contract</a>
+      </li>
+    </ul>
+    <div class="navgroup">Deployment guides</div>
+    <ul>
+      <li><a class="navitem" href="aws.html">AWS</a>
+      </li>
+      <li><a class="navitem" href="gcp.html">GCP</a>
+      </li>
+    </ul>
+    <div class="navgroup">Support</div>
+    <ul>
+      <li><a class="navitem" href="troubleshooting.html">Troubleshooting</a>
+      </li>
+    </ul>
+  </div>
+</nav>
+
+  <div class="content">
+    <article id="main">
+      <nav class="breadcrumb" aria-label="Breadcrumb">
+        <a href="index.html">Obsero ingestion</a> <span aria-hidden="true">&rsaquo;</span> <span>Get started</span> <span aria-hidden="true">&rsaquo;</span> <span>Quickstart</span>
+      </nav>
+
+
+<h1>Quickstart</h1>
+<p class="lede">One command. Deploy a mock site, point a real ingestion pipeline at it, watch
+classified traffic arrive, then tear it all down.</p>
+
+<div class="aside warning" role="note"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg><div class="body">
+  <p><b class="label">This costs real money</b></p>
+  <p>The demo rigs bill while they are up. The GCP forwarding rule is about
+  <strong>$18/month whether or not any traffic hits it</strong>. Run step 3 when you are done
+  &mdash; not tomorrow.</p>
+</div></div>
+<h2 id="before-you-start"><a class="anchor" href="#before-you-start" aria-label="Link to this section">#</a>Before you start</h2>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>You need</th><th>Both</th><th>AWS</th><th>GCP</th></tr></thead>
+<tbody>
+<tr><td>Terraform &ge; 1.5</td><td>&check;</td><td></td><td></td></tr>
+<tr><td>Node &ge; 18</td><td>&check;</td><td></td><td></td></tr>
+<tr><td>Authenticated CLI</td><td></td><td><code>aws configure</code></td><td><code>gcloud auth login</code></td></tr>
+<tr><td>Docker</td><td></td><td>&mdash;</td><td>&check; images are built locally</td></tr>
+<tr><td>A tracking ID from Obsero</td><td>&check;</td><td></td><td></td></tr>
+</tbody>
+</table>
+</div>
+
+<p><code>setup.sh</code> checks all of this for you and tells you exactly what is missing before
+it creates anything. On GCP it also checks the required APIs and offers to enable them &mdash;
+but <strong>not</strong> the IAM roles, which are the thing most likely to bite.
+<a href="gcp.html#permissions">Check those first &rarr;</a></p>
+
+<h2 id="zero-cost-first"><a class="anchor" href="#zero-cost-first" aria-label="Link to this section">#</a>Two checks that cost nothing</h2>
+
+<p>Both of these pass or fail in seconds and rule out most of what goes wrong later. Run them
+before you create any infrastructure.</p>
+
+<pre><code>cd aws            <span class="c"># or gcp</span>
+make test         <span class="c"># adapter payload vs the contract — no cloud account needed</span>
+make event TOKEN=&lt;tracking-id&gt; DOMAIN=acme.com</code></pre>
+
+<p><code>make test</code> feeds sample log lines through the real adapter parser and asserts the
+result against <code>validateEvent</code>. <code>make event</code> POSTs one hand-made event, so
+you know your tracking ID is accepted before anything depends on it.</p>
+
+<h2 id="the-three-steps"><a class="anchor" href="#the-three-steps" aria-label="Link to this section">#</a>The three steps</h2>
+
+<pre><code>./setup.sh</code></pre>
+
+<p>It asks which cloud, then shows this:</p>
+
+<pre><code>Obsero ingestion -- aws
+
+  1) Deploy a mock site            a site worth collecting logs from
+  2) Create the ingestion pipeline <span class="c">asks for your tracking ID</span>
+  3) Destroy everything            <span class="c">the rig bills while it is up</span>
+
+  4) Send mock traffic and score what arrived
+  5) Status -- what is deployed right now
+  6) Switch cloud
+  q) Quit</code></pre>
+
+<ol class="steps">
+<li>
+<h3>Deploy a mock site</h3>
+<p>A static site with real pages, behind a real CDN, so there is traffic worth logging. On AWS
+that is a private S3 bucket behind CloudFront; on GCP it is the same pages served from Cloud Run
+behind a global external Application Load Balancer with Cloud CDN in front.</p>
+<p>Nothing is sent to Obsero at this point, and no tracking ID is needed. The step prints the
+site URL when it finishes &mdash; open it.</p>
+<pre><code>==&gt; Site is up
+   https://d1234abcd.cloudfront.net
+
+   <span class="c">Open it. Nothing is being sent to Obsero yet -- that is step 2.</span></code></pre>
+<p>Budget 3&ndash;5 minutes on AWS (CloudFront is the slow part) and 5&ndash;8 on GCP, which also
+builds a container image on the way.</p>
+</li>
+
+<li>
+<h3>Create the ingestion pipeline</h3>
+<p>This is the step that needs your tracking ID &mdash; the site token Obsero issued you, sent as
+the <code>x-obsero-key</code> header on every forwarded event. It is read hidden, then saved to
+<code>&lt;cloud&gt;/site/terraform/terraform.tfvars</code>, which is gitignored and
+<code>chmod 600</code>, because <code>terraform destroy</code> and every later apply need it too.</p>
+<pre><code>==&gt; Your Obsero tracking ID
+   <span class="c">The site token Obsero issued you. It is sent as the x-obsero-key header</span>
+   <span class="c">on every forwarded event, and is what proves the domain is yours.</span>
+
+   Tracking ID: <span class="c">••••••••••••••••</span>
+ v using wuJ7...oF_E
+
+==&gt; Collecting from
+   https://d1234abcd.cloudfront.net
+   <span class="c">every request to this URL becomes one POST to Obsero</span>
+
+   Send one test event first, to check the ID is accepted? [y/N]</code></pre>
+<p>Say yes. A rejected tracking ID means the pipeline forwards into nothing, silently &mdash;
+better to find out in one second than after a ten-minute apply. Then the pipeline goes up: on
+AWS, CloudFront standard logs into Firehose into an adapter Lambda; on GCP, load balancer request
+logs through a Log Router sink into Pub/Sub into a Cloud Run adapter.</p>
+<div class="aside note" role="note"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/></svg><div class="body">
+  <p><b class="label">Give it a minute before you judge it</b></p>
+  <p><strong>AWS:</strong> first events land in 60&ndash;90 seconds. CloudFront flushes
+  continuously but Firehose buffers for at least 60s, and that is a floor, not a setting.</p>
+  <p><strong>GCP:</strong> the header allow-list takes several minutes to reach the edge. Events
+  that arrive headerless right after an apply are propagation, not breakage.</p>
+</div></div></li>
+
+<li>
+<h3>Destroy everything</h3>
+<p>Terraform does the work; the wrapper handles what it cannot &mdash; emptying S3 buckets whose
+contents Terraform does not own, passing each stack the credentials it needs, and then
+<strong>checking the cloud afterwards</strong> for anything still standing. A lost state file or a
+half-finished destroy leaves resources that no <code>terraform plan</code> will ever mention.</p>
+<pre><code>./destroy.sh --check      <span class="c"># just tell me what is still deployed</span>
+./destroy.sh --dry-run    <span class="c"># show the plan, touch nothing</span>
+./destroy.sh aws          <span class="c"># one cloud</span>
+./destroy.sh --sweep      <span class="c"># delete leftovers too, not just report them</span></code></pre>
+<p>CloudFront is the one exception: a distribution has to be disabled, left to propagate, and
+deleted minutes later, so the script reports it rather than pretending it can be done in one
+pass.</p>
+</li>
+</ol>
+
+<h2 id="watch-it-work"><a class="anchor" href="#watch-it-work" aria-label="Link to this section">#</a>Watch it work</h2>
+
+<p>Option 4 sends a reproducible mix of traffic as 19 client personas &mdash; each carrying the
+headers that client really sends &mdash; waits out the delivery latency, then scores what
+actually arrived.</p>
+
+<pre><code>./setup.sh aws traffic -n 40</code></pre>
+
+<p>Every request is tagged <code>?mt=&lt;runId&gt;-&lt;seq&gt;</code>. The scorer reads the records
+back, replays them through the <strong>real</strong> adapter parser, correlates each tag, and
+diffs headers sent against headers received. Measured baselines: 78/78 correlated on AWS, 40/40
+on GCP, zero header loss on either.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>kind</th><th>personas</th></tr></thead>
+<tbody>
+<tr><td><code>ai-agent</code></td><td>ChatGPT-User, Claude-User, Perplexity-User, OAI-SearchBot, DuckAssistBot</td></tr>
+<tr><td><code>ai-crawler</code></td><td>GPTBot, ClaudeBot, PerplexityBot, Meta-ExternalAgent, Bytespider, CCBot, Amazonbot</td></tr>
+<tr><td><code>human</code></td><td>Chrome/Windows, Safari/iPhone, Firefox/macOS, Chrome/Android</td></tr>
+<tr><td><code>search-bot</code></td><td>Googlebot, Bingbot, Applebot</td></tr>
+</tbody>
+</table>
+</div>
+
+<pre><code>cd aws
+make traffic N=40                    <span class="c"># weighted mix</span>
+make traffic N=20 KIND=ai-agent      <span class="c"># one class</span>
+make traffic N=10 ONLY=gptbot SEED=7 <span class="c"># specific, reproducible</span>
+make personas                        <span class="c"># list them</span></code></pre>
+
+<h2 id="non-interactive"><a class="anchor" href="#non-interactive" aria-label="Link to this section">#</a>Without the menu</h2>
+
+<p>Every menu item has a flag form, for CI or for driving it from a script:</p>
+
+<pre><code>./setup.sh aws site
+./setup.sh aws pipeline --token &lt;tracking-id&gt;
+./setup.sh aws traffic -n 40
+./setup.sh aws status
+./setup.sh aws destroy --yes</code></pre>
+
+<p>Or skip <code>setup.sh</code> entirely and use the make targets directly &mdash; <code>make</code>
+with no argument in either cloud directory lists them all. <code>make deploy</code> is steps 1 and 2
+in a single apply; <code>make e2e</code> is deploy, traffic, wait, score.</p>
+
+<h2 id="what-setup-does"><a class="anchor" href="#what-setup-does" aria-label="Link to this section">#</a>What setup.sh is actually doing</h2>
+
+<p>Worth knowing, because it explains the one thing that looks odd: the site and the pipeline are
+<strong>one Terraform stack</strong>, not two. Step 1 is a targeted apply of the site resources
+only; step 2 is the plain untargeted apply, which adds the <code>module.ingestion</code> block.
+That split exists purely to get you a working URL before you have to think about tokens.</p>
+
+<p>Because both stacks declare <code>obsero_site_token</code> with no default, step 1 writes the
+placeholder <code>set-in-step-2</code> into <code>terraform.tfvars</code> so it can plan at all.
+Step 2 refuses to apply while that is still the value.</p>
+
+
+      <div class="helpful">
+        <span>Was this page helpful?</span>
+        <span class="thumbs">
+          <a class="thumb" href="https://github.com/Obsero-ai/obsero-public/issues/new?title=Docs:+Quickstart" aria-label="Yes, this page was helpful"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M1 21h4V9H1v12zm22-11c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.59 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-2z"/></svg></a>
+          <a class="thumb" href="https://github.com/Obsero-ai/obsero-public/issues/new?title=Docs:+Quickstart" aria-label="No, this page needs work"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3H6c-.83 0-1.54.5-1.84 1.22l-3.02 7.05c-.09.23-.14.47-.14.73v2c0 1.1.9 2 2 2h6.31l-.95 4.57-.03.32c0 .41.17.79.44 1.06L9.83 23l6.59-6.59c.36-.36.58-.86.58-1.41V5c0-1.1-.9-2-2-2zm4 0v12h4V3h-4z"/></svg></a>
+        </span>
+      </div>
+
+      <nav class="nextprev" aria-label="Pagination">
+        <a href="index.html">&larr; Overview</a>
+        <a href="contract.html">The contract &rarr;</a>
+      </nav>
+    </article>
+
+      <aside class="toc">
+        <div class="toc-inner">
+          <h2>On this page</h2>
+          <ul>
+          <li><a href="#before-you-start">Before you start</a></li>
+          <li><a href="#zero-cost-first">Two checks that cost nothing</a></li>
+          <li><a href="#the-three-steps">The three steps</a></li>
+          <li><a href="#watch-it-work">Watch it work</a></li>
+          <li><a href="#non-interactive">Without the menu</a></li>
+          <li><a href="#what-setup-does">What setup.sh is actually doing</a></li>
+          </ul>
+        </div>
+      </aside>
+
+    <div class="pagefoot">
+      <p>Reference implementations for streaming CDN request logs to Obsero &mdash; a starting point, not a product. Fork it and keep the parts that match your stack. <a href="https://github.com/Obsero-ai/obsero-public">Source on GitHub</a>.</p>
+      <p>Measured numbers on these pages come from live deployments and are recorded in each cloud's <code>NOTES.md</code>. Confirm current cloud pricing before quoting any cost figure.</p>
+    </div>
+  </div>
+</div>
+
+<script src="assets/search-index.js" defer></script>
+<script src="assets/docs.js" defer></script>
+</body>
+</html>

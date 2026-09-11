@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Overview&nbsp;&nbsp;|&nbsp;&nbsp;Obsero ingestion</title>
+<meta name="description" content="Stream every CDN request to Obsero so AI agent traffic can be classified on request headers. Reference implementations for AWS CloudFront and Google Cloud.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&amp;family=Roboto+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/docs.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='10' fill='%231a73e8'/%3E%3Ccircle cx='12' cy='12' r='4' fill='white'/%3E%3C/svg%3E">
+</head>
+<body>
+<a class="skip" href="#main">Skip to main content</a>
+
+<header class="topbar">
+  <button class="iconbtn" id="nav-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="sidenav">
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/></svg>
+  </button>
+  <a class="product" href="index.html"><b>Obsero ingestion</b> <span>Documentation</span></a>
+  <div class="topbar-end">
+    <a class="topbar-link" href="contract.html">The contract</a>
+    <a class="topbar-link" href="https://github.com/Obsero-ai/obsero-public">GitHub</a>
+  </div>
+</header>
+
+<div class="scrim" hidden-desktop></div>
+
+<div class="shell">
+<nav class="sidenav" id="sidenav" aria-label="Documentation">
+  <div class="navsearch">
+    <input id="navsearch-input" type="search" placeholder="Search docs" aria-label="Search the documentation" autocomplete="off" spellcheck="false">
+  </div>
+  <div id="navresults" class="navresults" hidden></div>
+  <div id="navtree">
+    <div class="navgroup">Get started</div>
+    <ul>
+      <li><a class="navitem current" href="index.html" aria-current="page">Overview</a>
+        <ul class="subnav">
+          <li><a href="#the-shape-of-it">The shape of it</a></li>
+          <li><a href="#which-one-do-i-want">Which one do I want?</a></li>
+          <li><a href="#whats-in-the-repo">What&#x27;s in the repo</a></li>
+          <li><a href="#agents">If you work with a coding agent</a></li>
+        </ul>
+      </li>
+      <li><a class="navitem" href="quickstart.html">Quickstart</a>
+      </li>
+    </ul>
+    <div class="navgroup">Reference</div>
+    <ul>
+      <li><a class="navitem" href="contract.html">The contract</a>
+      </li>
+    </ul>
+    <div class="navgroup">Deployment guides</div>
+    <ul>
+      <li><a class="navitem" href="aws.html">AWS</a>
+      </li>
+      <li><a class="navitem" href="gcp.html">GCP</a>
+      </li>
+    </ul>
+    <div class="navgroup">Support</div>
+    <ul>
+      <li><a class="navitem" href="troubleshooting.html">Troubleshooting</a>
+      </li>
+    </ul>
+  </div>
+</nav>
+
+  <div class="content">
+    <article id="main">
+      <nav class="breadcrumb" aria-label="Breadcrumb">
+        <a href="index.html">Obsero ingestion</a> <span aria-hidden="true">&rsaquo;</span> <span>Get started</span>
+      </nav>
+
+
+<h1>Stream CDN request logs to Obsero</h1>
+<p class="lede">Every HTTP request hitting your CDN becomes one POST to Obsero, so AI agent
+traffic can be classified on the request headers it actually sent.</p>
+
+<p>Two working end-to-end implementations &mdash; AWS CloudFront and Google Cloud &mdash; plus a
+demo site and a traffic harness for each. This is a starting point, not a product. Fork it,
+keep the parts that match your stack, throw away the rest.</p>
+
+<div class="cards">
+  <a class="card" href="quickstart.html">
+    <h3>Quickstart &rarr;</h3>
+    <p>One command, three steps: deploy a mock site, create the pipeline, tear it down.</p>
+  </a>
+  <a class="card" href="contract.html">
+    <h3>The contract &rarr;</h3>
+    <p>The URL and the payload. The only thing you have to get right.</p>
+  </a>
+  <a class="card" href="aws.html">
+    <h3>AWS &rarr;</h3>
+    <p>CloudFront &rarr; Firehose &rarr; Lambda adapter. One real decision to make.</p>
+  </a>
+  <a class="card" href="gcp.html">
+    <h3>Google Cloud &rarr;</h3>
+    <p>LB request logs &rarr; Pub/Sub &rarr; Cloud Run adapter. Named headers on the cheap path.</p>
+  </a>
+</div>
+
+<h2 id="the-shape-of-it"><a class="anchor" href="#the-shape-of-it" aria-label="Link to this section">#</a>The shape of it</h2>
+
+<p>Obsero cares about exactly two things: the URL you POST to, and the payload. Everything
+else &mdash; which cloud, which log source, which language, whether you batch, whether you use
+Terraform at all &mdash; is your call.</p>
+
+<figure class="snippet">
+<figcaption>one event per HTTP request</figcaption>
+<pre><code>POST https://analytics-staging.obsero.ai/v1/events
+
+content-type:     application/json
+x-obsero-domain:  acme.com          <span class="c"># which site this event belongs to</span>
+x-obsero-key:     &lt;tracking ID&gt;     <span class="c"># proves you own it</span>
+
+{
+  "path": "/pricing",
+  "method": "GET",
+  "statusCode": 200,
+  "headers": {
+    "host": "acme.com",
+    "user-agent": "Mozilla/5.0 ...; compatible; ChatGPT-User/1.0; +https://openai.com/bot",
+    "accept": "*/*",
+    "signature-agent": "\"https://chatgpt.com\""
+  }
+}</code></pre>
+</figure>
+
+<p>That is the whole integration. <a href="contract.html">Read the contract in full &rarr;</a></p>
+
+<h2 id="which-one-do-i-want"><a class="anchor" href="#which-one-do-i-want" aria-label="Link to this section">#</a>Which one do I want?</h2>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Your setup</th><th>Start here</th><th>Why</th></tr></thead>
+<tbody>
+<tr><td>CloudFront in front of anything</td><td><a href="aws.html">AWS</a></td><td>Two log sources: cheap (User-Agent only) or full headers for ~$11/mo.</td></tr>
+<tr><td>Google Cloud load balancer + Cloud CDN</td><td><a href="gcp.html">GCP</a></td><td>Full headers on the cheap path &mdash; no trade to make.</td></tr>
+<tr><td>A <strong>plain GCS bucket</strong> behind Cloud CDN</td><td><a href="gcp.html#backend-buckets">GCP, caveat first</a></td><td>Backend <em>buckets</em> emit no request logs at all. Your origin has to be a backend <em>service</em>.</td></tr>
+<tr><td>Cloudflare, Fastly, Akamai, a bare origin</td><td><a href="contract.html#obsero-mjs">none of them</a></td><td>Import <code>sendEvent</code> and call it from wherever you already see requests. That is the entire integration.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="whats-in-the-repo"><a class="anchor" href="#whats-in-the-repo" aria-label="Link to this section">#</a>What's in the repo</h2>
+
+<pre><code>obsero.mjs      the contract: build an event, validate it, POST it
+setup.sh        the interactive installer
+destroy.sh      teardown, plus a sweep for resources Terraform lost track of
+aws/            CloudFront -> Firehose -> Lambda adapter -> Obsero
+gcp/            LB request logs -> Pub/Sub -> Cloud Run adapter -> Obsero
+docs/           this site</code></pre>
+
+<p>Each cloud directory has the same three parts:</p>
+
+<pre><code>ingestion/      the Terraform module you would actually ship
+site/           a demo site to point it at, so you can see traffic flow
+test/           a traffic harness: 19 client personas, then score what arrived</code></pre>
+
+<p>Both <code>ingestion/</code> modules deploy on their own. <code>site/</code> and
+<code>test/</code> exist to prove the thing works and are the first things to delete once it
+does.</p>
+
+<h2 id="agents"><a class="anchor" href="#agents" aria-label="Link to this section">#</a>If you work with a coding agent</h2>
+
+<p>There are <code>AGENTS.md</code> files at the repo root and in each cloud directory. They
+carry the contract, the setup order, the failure modes that look like bugs but are not, and the
+handful of things in the Terraform that must not be &ldquo;cleaned up&rdquo; because they fail
+silently when removed. Point your agent at them before it touches anything.</p>
+
+
+      <div class="helpful">
+        <span>Was this page helpful?</span>
+        <span class="thumbs">
+          <a class="thumb" href="https://github.com/Obsero-ai/obsero-public/issues/new?title=Docs:+Overview" aria-label="Yes, this page was helpful"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M1 21h4V9H1v12zm22-11c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.59 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-2z"/></svg></a>
+          <a class="thumb" href="https://github.com/Obsero-ai/obsero-public/issues/new?title=Docs:+Overview" aria-label="No, this page needs work"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3H6c-.83 0-1.54.5-1.84 1.22l-3.02 7.05c-.09.23-.14.47-.14.73v2c0 1.1.9 2 2 2h6.31l-.95 4.57-.03.32c0 .41.17.79.44 1.06L9.83 23l6.59-6.59c.36-.36.58-.86.58-1.41V5c0-1.1-.9-2-2-2zm4 0v12h4V3h-4z"/></svg></a>
+        </span>
+      </div>
+
+      <nav class="nextprev" aria-label="Pagination">
+        <span class="spacer"></span>
+        <a href="quickstart.html">Quickstart &rarr;</a>
+      </nav>
+    </article>
+
+      <aside class="toc">
+        <div class="toc-inner">
+          <h2>On this page</h2>
+          <ul>
+          <li><a href="#the-shape-of-it">The shape of it</a></li>
+          <li><a href="#which-one-do-i-want">Which one do I want?</a></li>
+          <li><a href="#whats-in-the-repo">What&#x27;s in the repo</a></li>
+          <li><a href="#agents">If you work with a coding agent</a></li>
+          </ul>
+        </div>
+      </aside>
+
+    <div class="pagefoot">
+      <p>Reference implementations for streaming CDN request logs to Obsero &mdash; a starting point, not a product. Fork it and keep the parts that match your stack. <a href="https://github.com/Obsero-ai/obsero-public">Source on GitHub</a>.</p>
+      <p>Measured numbers on these pages come from live deployments and are recorded in each cloud's <code>NOTES.md</code>. Confirm current cloud pricing before quoting any cost figure.</p>
+    </div>
+  </div>
+</div>
+
+<script src="assets/search-index.js" defer></script>
+<script src="assets/docs.js" defer></script>
+</body>
+</html>

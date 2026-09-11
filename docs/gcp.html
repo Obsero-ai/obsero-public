@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GCP&nbsp;&nbsp;|&nbsp;&nbsp;Obsero ingestion</title>
+<meta name="description" content="Load balancer request logs to Pub/Sub to a Cloud Run adapter. Named headers on the cheap path, permissions, and cost.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&amp;family=Roboto+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/docs.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='10' fill='%231a73e8'/%3E%3Ccircle cx='12' cy='12' r='4' fill='white'/%3E%3C/svg%3E">
+</head>
+<body>
+<a class="skip" href="#main">Skip to main content</a>
+
+<header class="topbar">
+  <button class="iconbtn" id="nav-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="sidenav">
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/></svg>
+  </button>
+  <a class="product" href="index.html"><b>Obsero ingestion</b> <span>Documentation</span></a>
+  <div class="topbar-end">
+    <a class="topbar-link" href="contract.html">The contract</a>
+    <a class="topbar-link" href="https://github.com/Obsero-ai/obsero-public">GitHub</a>
+  </div>
+</header>
+
+<div class="scrim" hidden-desktop></div>
+
+<div class="shell">
+<nav class="sidenav" id="sidenav" aria-label="Documentation">
+  <div class="navsearch">
+    <input id="navsearch-input" type="search" placeholder="Search docs" aria-label="Search the documentation" autocomplete="off" spellcheck="false">
+  </div>
+  <div id="navresults" class="navresults" hidden></div>
+  <div id="navtree">
+    <div class="navgroup">Get started</div>
+    <ul>
+      <li><a class="navitem" href="index.html">Overview</a>
+      </li>
+      <li><a class="navitem" href="quickstart.html">Quickstart</a>
+      </li>
+    </ul>
+    <div class="navgroup">Reference</div>
+    <ul>
+      <li><a class="navitem" href="contract.html">The contract</a>
+      </li>
+    </ul>
+    <div class="navgroup">Deployment guides</div>
+    <ul>
+      <li><a class="navitem" href="aws.html">AWS</a>
+      </li>
+      <li><a class="navitem current" href="gcp.html" aria-current="page">GCP</a>
+        <ul class="subnav">
+          <li><a href="#backend-buckets">Read this first</a></li>
+          <li><a href="#try-it">Try it without a GCP project</a></li>
+          <li><a href="#wiring-it-in">Wiring it into your own load balancer</a></li>
+          <li><a href="#headers">The headline win: named request headers on the cheap path</a></li>
+          <li><a href="#permissions">Permissions — roles/editor is not enough</a></li>
+          <li><a href="#terraform-trap">The Terraform trap that fails silently</a></li>
+          <li><a href="#gotchas">Before you trust the numbers</a></li>
+          <li><a href="#cost">Cost</a></li>
+          <li><a href="#teardown">Tearing it down</a></li>
+          <li><a href="#unverified">Still unverified</a></li>
+        </ul>
+      </li>
+    </ul>
+    <div class="navgroup">Support</div>
+    <ul>
+      <li><a class="navitem" href="troubleshooting.html">Troubleshooting</a>
+      </li>
+    </ul>
+  </div>
+</nav>
+
+  <div class="content">
+    <article id="main">
+      <nav class="breadcrumb" aria-label="Breadcrumb">
+        <a href="index.html">Obsero ingestion</a> <span aria-hidden="true">&rsaquo;</span> <span>Deployment guides</span> <span aria-hidden="true">&rsaquo;</span> <span>GCP</span>
+      </nav>
+
+
+<h1>Google Cloud</h1>
+<p class="lede">Streams every request hitting a Cloud Load Balancing backend service to Obsero.</p>
+
+<div class="flow">viewer -&gt; Cloud CDN + external Application LB -&gt; Cloud Logging
+       -&gt; Log Router sink -&gt; Pub/Sub -&gt; Cloud Run adapter -&gt; POST /v1/events
+                          \-&gt; dead-letter topic (replayable)</div>
+
+<p>Everything runs in your own project. The adapter strips <code>authorization</code>,
+<code>cookie</code> and <code>set-cookie</code> before anything leaves it.</p>
+
+<h2 id="backend-buckets"><a class="anchor" href="#backend-buckets" aria-label="Link to this section">#</a>Read this first</h2>
+
+<div class="aside warning" role="note"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg><div class="body">
+  <p><b class="label">Backend buckets produce no request logs</b></p>
+  <p><code>BackendBucket</code> has <strong>no <code>logConfig</code> field at all</strong> in the
+  Compute v1 API, so a static site served straight from Cloud Storage through Cloud CDN emits nothing
+  to ship. Your origin has to be a backend <strong>service</strong>.</p>
+  <p>Apps on Cloud Run, GKE or a MIG already are one and are unaffected. A pure GCS origin has to
+  change before it can be onboarded &mdash; which is why the demo site here serves its static pages
+  from Cloud Run rather than a bucket.</p>
+</div></div>
+<h2 id="try-it"><a class="anchor" href="#try-it" aria-label="Link to this section">#</a>Try it without a GCP project</h2>
+
+<pre><code>cd gcp
+make test                                        <span class="c"># adapter payload vs the contract</span>
+make event TOKEN=&lt;tracking-id&gt; DOMAIN=acme.com    <span class="c"># POST one event, check the ID</span></code></pre>
+
+<p>Then, to watch it work end to end, <a href="quickstart.html">the quickstart</a> &mdash; or the
+make targets directly:</p>
+
+<pre><code>make site              <span class="c"># site + LB + header logging only</span>
+make sample            <span class="c"># confirm the headers reach Cloud Logging</span>
+make deploy            <span class="c"># the rest: sink, Pub/Sub, adapter</span>
+make traffic N=40      <span class="c"># mock browser / AI-agent / crawler traffic</span>
+make check             <span class="c"># score what actually reached the endpoint</span>
+make destroy           <span class="c"># the load balancer bills at idle -- do this</span></code></pre>
+
+<p>The two-stage start is deliberate: <code>make sample</code> confirms the header allow-list behaves
+before you build anything downstream of it.</p>
+
+<h2 id="wiring-it-in"><a class="anchor" href="#wiring-it-in" aria-label="Link to this section">#</a>Wiring it into your own load balancer</h2>
+
+<figure class="snippet">
+<figcaption>the whole integration</figcaption>
+<pre><code>module "obsero_ingestion" {
+  source = "./ingestion"
+
+  project_id  = var.project_id
+  name_prefix = "acme-prod"
+  site_token  = var.obsero_site_token
+
+  backend_service_name = google_compute_backend_service.site.name
+}</code></pre>
+</figure>
+
+<p>Unlike the AWS module there is no ARN to attach &mdash; this one configures logging on the named
+backend service directly. Better DX, at the cost of mutating a resource you own. It is reversible;
+<code>terraform destroy</code> takes the allow-list back off.</p>
+
+<h2 id="headers"><a class="anchor" href="#headers" aria-label="Link to this section">#</a>The headline win: named request headers on the cheap path</h2>
+
+<p>CloudFront forces a choice &mdash; pay ~$11/month for real-time logs to get the full header set, or
+take standard logging and lose everything but User-Agent. <strong>GCP has no such trade.</strong>
+<code>BackendServiceLogConfig.loggingHttpRequestHeaders</code> names the headers you want and they
+arrive through the ordinary, cheap path:</p>
+
+<pre><code>from,                                            <span class="c"># GPTBot, Googlebot</span>
+signature-agent, signature-input, signature,     <span class="c"># Web Bot Auth</span>
+accept, accept-language,                         <span class="c"># browsers vs */* bots</span>
+sec-ch-ua, sec-ch-ua-platform, sec-ch-ua-mobile, <span class="c"># client hints</span>
+sec-fetch-dest                                   <span class="c"># presence alone is the signal</span></code></pre>
+
+<div class="aside caution" role="note"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg><div class="body">
+  <p><b class="label">The API caps the list at 10</b></p>
+  <p>An eleventh header is rejected outright. Ten is enough only because <code>user-agent</code>,
+  <code>referer</code> and the client IP arrive as first-class <code>httpRequest</code> fields whether
+  or not you name them &mdash; spending slots on those would waste them. The adapter merges both
+  sources.</p>
+  <p>So the question is never &ldquo;can I add one more?&rdquo; It is which one you are dropping.
+  <code>sec-fetch-mode</code> and <code>sec-fetch-site</code> were the two cut from the default
+  list.</p>
+</div></div>
+<p>It is an allow-list, not &ldquo;all headers&rdquo;, which is arguably the better default: the
+payload carries only what classification needs, so nothing incidental leaves your project.</p>
+
+<h3 id="what-they-look-like"><a class="anchor" href="#what-they-look-like" aria-label="Link to this section">#</a>What the logged headers actually look like</h3>
+
+<p>The allow-list lands under <code>jsonPayload.loggingHttpRequestHeaders</code>, as an <strong>array
+of pairs</strong>, with every value <strong>base64-encoded</strong>:</p>
+
+<pre><code>"loggingHttpRequestHeaders": [
+  { "headerKey": "from",            "headerValue": "Ym90QG9wZW5haS5jb20=" },
+  { "headerKey": "signature-agent", "headerValue": "Imh0dHBzOi8vY2hhdGdwdC5jb20i" }
+]</code></pre>
+
+<ul>
+<li><strong>The base64 is a feature.</strong> It is why Web Bot Auth signatures survive
+byte-for-byte &mdash; quotes, commas and embedded colons included. CloudFront's percent-encoded
+<code>cs-headers</code> needed careful splitting on <code>%0A</code> <em>before</em> decoding, or a
+header value could forge an extra header. Nothing here can.</li>
+<li><strong>An absent header is simply missing from the array.</strong> There is no empty-string
+placeholder, so &ldquo;not sent&rdquo; and &ldquo;sent empty&rdquo; are indistinguishable.</li>
+<li><strong><code>httpRequest.userAgent</code> and <code>httpRequest.remoteIp</code> are populated
+regardless</strong>, confirming those slots are free.</li>
+</ul>
+
+<h2 id="permissions"><a class="anchor" href="#permissions" aria-label="Link to this section">#</a>Permissions &mdash; roles/editor is not enough</h2>
+
+<p><code>roles/editor</code> deliberately excludes log-routing configuration and resource-level
+<code>setIamPolicy</code>, which are the core of this pipeline. Check these before anyone runs
+apply.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Role</th><th>For</th></tr></thead>
+<tbody>
+<tr><td><code>roles/editor</code></td><td>load balancer, CDN, backend services, NEGs, Pub/Sub topics and subscriptions, Artifact Registry</td></tr>
+<tr><td><code>roles/logging.configWriter</code></td><td>the Log Router sink, and the <code>_Default</code> exclusion that stops you paying to store logs you already routed. <strong>Not implied by Editor</strong> &mdash; apply fails at the sink.</td></tr>
+<tr><td><code>roles/pubsub.admin</code></td><td><code>pubsub.topics.setIamPolicy</code>, to grant the sink's writer identity publisher on the topic. <strong><code>roles/pubsub.editor</code> does not cover it</strong> &mdash; without it the sink is created but silently publishes nothing.</td></tr>
+<tr><td><code>roles/run.admin</code></td><td>deploying the adapter and setting its invoker policy</td></tr>
+<tr><td><code>roles/iam.serviceAccountAdmin</code></td><td>the two service accounts the module creates</td></tr>
+</tbody>
+</table>
+</div>
+
+<pre><code>PROJECT=your-project
+MEMBER=user:you@example.com
+
+for ROLE in logging.configWriter pubsub.admin run.admin iam.serviceAccountAdmin; do
+  gcloud projects add-iam-policy-binding "$PROJECT" \
+    --member="$MEMBER" --role="roles/$ROLE"
+done</code></pre>
+
+<p>Check it directly rather than inferring from role names. There is no
+<code>gcloud projects test-iam-permissions</code> subcommand, so the REST call is the way &mdash; an
+empty <code>permissions</code> array back means none are granted:</p>
+
+<pre><code>curl -s -X POST \
+  -H "Authorization: Bearer $(gcloud auth print-access-token)" \
+  -H "Content-Type: application/json" \
+  -d '{"permissions":[
+        "logging.sinks.create","logging.sinks.update",
+        "logging.exclusions.create","logging.buckets.update",
+        "pubsub.topics.setIamPolicy"
+      ]}' \
+  "https://cloudresourcemanager.googleapis.com/v1/projects/$PROJECT:testIamPermissions"</code></pre>
+
+<h3 id="apis"><a class="anchor" href="#apis" aria-label="Link to this section">#</a>APIs</h3>
+
+<p><code>setup.sh</code> checks these and offers to enable them:</p>
+
+<pre><code>gcloud services enable \
+  compute.googleapis.com run.googleapis.com pubsub.googleapis.com \
+  logging.googleapis.com artifactregistry.googleapis.com iam.googleapis.com \
+  --project="$PROJECT"</code></pre>
+
+<p>Only project-level IAM is visible locally; org-level constraints surface at apply time. The two
+most likely to bite are a constraint blocking external HTTP(S) load balancers, and
+<code>constraints/iam.disableServiceAccountKeyCreation</code>.</p>
+
+<h2 id="terraform-trap"><a class="anchor" href="#terraform-trap" aria-label="Link to this section">#</a>The Terraform trap that fails silently</h2>
+
+<p>Neither <code>hashicorp/google</code> nor <code>google-beta</code> (v7) models
+<code>loggingHttpRequestHeaders</code> &mdash; <code>log_config</code> exposes only
+<code>enable</code>, <code>optional_fields</code>, <code>optional_mode</code> and
+<code>sample_rate</code>. The module therefore shells out to <code>gcloud</code> from a
+<code>terraform_data</code> + <code>local-exec</code>.</p>
+
+<div class="aside warning" role="note"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg><div class="body">
+  <p><b class="label">The allow-list survives Terraform only if it is re-asserted</b></p>
+  <p>The first version keyed the shell-out on a hash of the inputs and paired it with a destroy-time
+  provisioner that removed the list again. On the next full <code>terraform apply</code> that destroy
+  provisioner fired during a replacement and wrote back a <code>logConfig</code> with no
+  <code>loggingHttpRequestHeaders</code>.</p>
+  <p>Logs kept flowing. They simply arrived with nothing to classify on, and
+  <code>terraform plan</code> said &ldquo;No changes&rdquo; because Terraform cannot see a field it
+  does not model.</p>
+  <p>The fix is two resources rather than one. <code>terraform_data.request_logging</code> triggers on
+  <code>timestamp()</code>, so every apply re-installs the list and any drift heals itself. Removal
+  moved to <code>terraform_data.request_logging_cleanup</code>, whose triggers never change, so it
+  fires only on a genuine <code>terraform destroy</code>.</p>
+  <p><strong>The cost is one unavoidable change in every plan. Do not &ldquo;clean that up&rdquo;</strong>
+  &mdash; the trade is an invisible failure of the pipeline's whole purpose against a noisy plan.</p>
+</div></div>
+<h2 id="gotchas"><a class="anchor" href="#gotchas" aria-label="Link to this section">#</a>Before you trust the numbers</h2>
+
+<div class="aside caution" role="note"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg><div class="body">
+  <p><b class="label">Config changes take minutes to reach the edge</b></p>
+  <p>After re-installing the allow-list, requests sent ~60 seconds later were still logged with no
+  headers. The same probe at ~10 minutes carried all of them. Budget several minutes before trusting
+  a run taken straight after an apply, and treat a sudden run of headerless events after a deploy as
+  propagation rather than breakage.</p>
+</div></div>
+<div class="aside note" role="note"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/></svg><div class="body">
+  <p><b class="label">Excluding from _Default really does hide the logs</b></p>
+  <p>Once <code>exclude_from_default_bucket</code> takes effect, <code>gcloud logging read</code>
+  returns nothing for the load balancer &mdash; the entries are routed but never stored. That is the
+  intended saving, and it means <strong>Pub/Sub is the only place to read raw entries</strong>.
+  <code>make sample</code> reads storage, so it goes quiet once the exclusion lands; pull the verify
+  subscription instead.</p>
+</div></div>
+<div class="aside note" role="note"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/></svg><div class="body">
+  <p><b class="label">Delivery is at-least-once</b></p>
+  <p>A push that fails after the adapter already forwarded some of its events is retried whole. After
+  <code>max_delivery_attempts</code> the message parks on the dead-letter topic, where it stays queued
+  and replayable.</p>
+</div></div>
+<div class="aside note" role="note"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/></svg><div class="body">
+  <p><b class="label">The adapter image is built locally, not in Cloud Build</b></p>
+  <p><code>terraform apply</code> builds and pushes a container unless you set
+  <code>adapter_image</code>. That needs <code>docker</code> and an authenticated <code>gcloud</code>
+  on the machine running apply. In a default-configured project Cloud Build runs as the default
+  compute service account, which cannot read its own staging bucket &mdash; a local build needs only a
+  configured credential helper, and is faster besides.</p>
+</div></div>
+<h2 id="cost"><a class="anchor" href="#cost" aria-label="Link to this section">#</a>Cost</h2>
+
+<p>Per 1M requests/month, ~1 KB per log entry:</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Component</th><th>Cost</th></tr></thead>
+<tbody>
+<tr><td>Pub/Sub</td><td>~$0.04</td></tr>
+<tr><td>Cloud Run adapter</td><td>$0 &mdash; free tier, scales to zero</td></tr>
+<tr><td>Cloud Logging routing</td><td>$0 &mdash; routing to a sink is not charged</td></tr>
+<tr><td>Cloud Logging storage</td><td>$0 with <code>exclude_from_default_bucket</code></td></tr>
+<tr><td><strong>Pipeline total</strong></td><td><strong>under $1/month</strong></td></tr>
+</tbody>
+</table>
+</div>
+
+<p>The load balancer itself is <strong>not</strong> free &mdash; roughly $18/month for the forwarding
+rule plus per-GB processing, whatever the traffic. That does not matter to a customer who already runs
+one; it matters a lot for a demo rig that exists only to make traffic.</p>
+
+<div class="aside caution" role="note"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg><div class="body">
+  <p><b class="label">Confirm before quoting</b></p>
+  <p>Check current forwarding-rule and data-processing pricing before quoting any of these numbers to
+  anyone.</p>
+</div></div>
+<h2 id="teardown"><a class="anchor" href="#teardown" aria-label="Link to this section">#</a>Tearing it down</h2>
+
+<pre><code>make destroy      <span class="c"># terraform destroy, then check nothing is left standing</span>
+make leftovers    <span class="c"># just tell me what is still deployed</span></code></pre>
+
+<p>Do this between runs. The forwarding rule bills at idle whether or not traffic is flowing, and it
+is the single most expensive thing in the repo.</p>
+
+<p><code>terraform destroy</code> needs <code>project_id</code>, which has no default. Keep it in
+<code>site/terraform/terraform.tfvars</code>; the script checks for it up front rather than letting
+Terraform stall on a prompt. <code>destroy.sh --sweep</code> deletes leftovers rather than only
+reporting them &mdash; useful if a destroy half-finishes, since a Cloud Run service or backend service
+left behind will not show up in any later plan.</p>
+
+<h2 id="unverified"><a class="anchor" href="#unverified" aria-label="Link to this section">#</a>Still unverified</h2>
+
+<p>Do not assert these:</p>
+
+<ul>
+<li>per-header value truncation in <code>loggingHttpRequestHeaders</code> &mdash; the <em>count</em>
+limit is settled at 10, and nothing in a 40-request run came back truncated</li>
+<li>whether request logging is sampled independently of <code>sample_rate</code> under load, the way
+CloudFront real-time logs turned out to be best-effort. Three runs of 40 delivered 39, 40 and 40 &mdash;
+no evidence of loss, far too small a sample to call it exact</li>
+<li>end-to-end latency beyond the observed ~30&ndash;60s</li>
+</ul>
+
+
+      <div class="helpful">
+        <span>Was this page helpful?</span>
+        <span class="thumbs">
+          <a class="thumb" href="https://github.com/Obsero-ai/obsero-public/issues/new?title=Docs:+GCP" aria-label="Yes, this page was helpful"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M1 21h4V9H1v12zm22-11c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.59 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-2z"/></svg></a>
+          <a class="thumb" href="https://github.com/Obsero-ai/obsero-public/issues/new?title=Docs:+GCP" aria-label="No, this page needs work"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3H6c-.83 0-1.54.5-1.84 1.22l-3.02 7.05c-.09.23-.14.47-.14.73v2c0 1.1.9 2 2 2h6.31l-.95 4.57-.03.32c0 .41.17.79.44 1.06L9.83 23l6.59-6.59c.36-.36.58-.86.58-1.41V5c0-1.1-.9-2-2-2zm4 0v12h4V3h-4z"/></svg></a>
+        </span>
+      </div>
+
+      <nav class="nextprev" aria-label="Pagination">
+        <a href="aws.html">&larr; AWS</a>
+        <a href="troubleshooting.html">Troubleshooting &rarr;</a>
+      </nav>
+    </article>
+
+      <aside class="toc">
+        <div class="toc-inner">
+          <h2>On this page</h2>
+          <ul>
+          <li><a href="#backend-buckets">Read this first</a></li>
+          <li><a href="#try-it">Try it without a GCP project</a></li>
+          <li><a href="#wiring-it-in">Wiring it into your own load balancer</a></li>
+          <li><a href="#headers">The headline win: named request headers on the cheap path</a></li>
+          <li class="sub"><a href="#what-they-look-like">What the logged headers actually look like</a></li>
+          <li><a href="#permissions">Permissions — roles/editor is not enough</a></li>
+          <li class="sub"><a href="#apis">APIs</a></li>
+          <li><a href="#terraform-trap">The Terraform trap that fails silently</a></li>
+          <li><a href="#gotchas">Before you trust the numbers</a></li>
+          <li><a href="#cost">Cost</a></li>
+          <li><a href="#teardown">Tearing it down</a></li>
+          <li><a href="#unverified">Still unverified</a></li>
+          </ul>
+        </div>
+      </aside>
+
+    <div class="pagefoot">
+      <p>Reference implementations for streaming CDN request logs to Obsero &mdash; a starting point, not a product. Fork it and keep the parts that match your stack. <a href="https://github.com/Obsero-ai/obsero-public">Source on GitHub</a>.</p>
+      <p>Measured numbers on these pages come from live deployments and are recorded in each cloud's <code>NOTES.md</code>. Confirm current cloud pricing before quoting any cost figure.</p>
+    </div>
+  </div>
+</div>
+
+<script src="assets/search-index.js" defer></script>
+<script src="assets/docs.js" defer></script>
+</body>
+</html>

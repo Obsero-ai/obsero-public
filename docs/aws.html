@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AWS&nbsp;&nbsp;|&nbsp;&nbsp;Obsero ingestion</title>
+<meta name="description" content="CloudFront to Firehose to a Lambda adapter. Choosing a log source, measured gotchas, and cost.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&amp;family=Roboto+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/docs.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='10' fill='%231a73e8'/%3E%3Ccircle cx='12' cy='12' r='4' fill='white'/%3E%3C/svg%3E">
+</head>
+<body>
+<a class="skip" href="#main">Skip to main content</a>
+
+<header class="topbar">
+  <button class="iconbtn" id="nav-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="sidenav">
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/></svg>
+  </button>
+  <a class="product" href="index.html"><b>Obsero ingestion</b> <span>Documentation</span></a>
+  <div class="topbar-end">
+    <a class="topbar-link" href="contract.html">The contract</a>
+    <a class="topbar-link" href="https://github.com/Obsero-ai/obsero-public">GitHub</a>
+  </div>
+</header>
+
+<div class="scrim" hidden-desktop></div>
+
+<div class="shell">
+<nav class="sidenav" id="sidenav" aria-label="Documentation">
+  <div class="navsearch">
+    <input id="navsearch-input" type="search" placeholder="Search docs" aria-label="Search the documentation" autocomplete="off" spellcheck="false">
+  </div>
+  <div id="navresults" class="navresults" hidden></div>
+  <div id="navtree">
+    <div class="navgroup">Get started</div>
+    <ul>
+      <li><a class="navitem" href="index.html">Overview</a>
+      </li>
+      <li><a class="navitem" href="quickstart.html">Quickstart</a>
+      </li>
+    </ul>
+    <div class="navgroup">Reference</div>
+    <ul>
+      <li><a class="navitem" href="contract.html">The contract</a>
+      </li>
+    </ul>
+    <div class="navgroup">Deployment guides</div>
+    <ul>
+      <li><a class="navitem current" href="aws.html" aria-current="page">AWS</a>
+        <ul class="subnav">
+          <li><a href="#try-it">Try it without an AWS account</a></li>
+          <li><a href="#wiring-it-in">Wiring it into your own distribution</a></li>
+          <li><a href="#log-source">Which log source? The one real decision</a></li>
+          <li><a href="#gotchas">Before you trust the numbers</a></li>
+          <li><a href="#why-lambda">Why the adapter Lambda exists at all</a></li>
+          <li><a href="#cost">Cost</a></li>
+          <li><a href="#teardown">Tearing it down</a></li>
+        </ul>
+      </li>
+      <li><a class="navitem" href="gcp.html">GCP</a>
+      </li>
+    </ul>
+    <div class="navgroup">Support</div>
+    <ul>
+      <li><a class="navitem" href="troubleshooting.html">Troubleshooting</a>
+      </li>
+    </ul>
+  </div>
+</nav>
+
+  <div class="content">
+    <article id="main">
+      <nav class="breadcrumb" aria-label="Breadcrumb">
+        <a href="index.html">Obsero ingestion</a> <span aria-hidden="true">&rsaquo;</span> <span>Deployment guides</span> <span aria-hidden="true">&rsaquo;</span> <span>AWS</span>
+      </nav>
+
+
+<h1>AWS &mdash; CloudFront</h1>
+<p class="lede">Streams every request hitting a CloudFront distribution to Obsero.</p>
+
+<div class="flow">viewer -&gt; CloudFront -&gt; Firehose -&gt; adapter Lambda -&gt; POST /v1/events
+                                      \-&gt; S3 backup bucket (undeliverable batches)</div>
+
+<p>Everything runs in your own AWS account. The adapter strips <code>authorization</code>,
+<code>cookie</code> and <code>set-cookie</code> before anything leaves it.</p>
+
+<h2 id="try-it"><a class="anchor" href="#try-it" aria-label="Link to this section">#</a>Try it without an AWS account</h2>
+
+<pre><code>cd aws
+make test                                        <span class="c"># adapter payload vs the contract</span>
+make event TOKEN=&lt;tracking-id&gt; DOMAIN=acme.com    <span class="c"># POST one event, check the ID</span></code></pre>
+
+<p>Then, to watch it work end to end, <a href="quickstart.html">the quickstart</a> &mdash; or the
+make targets directly:</p>
+
+<pre><code>make deploy            <span class="c"># demo site + pipeline</span>
+make traffic N=40      <span class="c"># mock browser / AI-agent / crawler traffic</span>
+make check             <span class="c"># score what actually reached the endpoint</span>
+make logs              <span class="c"># follow the adapter forwarding, live</span>
+make destroy           <span class="c"># tear it all down again</span></code></pre>
+
+<h2 id="wiring-it-in"><a class="anchor" href="#wiring-it-in" aria-label="Link to this section">#</a>Wiring it into your own distribution</h2>
+
+<p>One module block. The module <strong>never touches your distribution</strong> &mdash; it builds
+the pipeline and hands back what you attach, so it works whether or not Terraform manages your
+CloudFront.</p>
+
+<figure class="snippet">
+<figcaption>standard mode &mdash; the whole integration</figcaption>
+<pre><code>module "obsero_ingestion" {
+  source = "./ingestion"
+
+  name_prefix = "acme-prod"
+  site_token  = var.obsero_site_token
+
+  <span class="c"># CloudFront delivers straight into Firehose. No idle cost.</span>
+  log_source       = "standard"
+  distribution_arn = aws_cloudfront_distribution.site.arn
+}</code></pre>
+</figure>
+
+<p>For <code>realtime</code>, drop <code>distribution_arn</code> and attach the exported ARN to each
+cache behaviour you want logged instead:</p>
+
+<pre><code>default_cache_behavior {
+  <span class="c"># ...</span>
+  realtime_log_config_arn = module.obsero_ingestion.realtime_log_config_arn
+}</code></pre>
+
+<p>Behaviours without the ARN emit nothing, so you can roll it out one path pattern at a time. See
+<code>ingestion/examples/</code> for both shapes and <code>ingestion/README.md</code> for every
+input.</p>
+
+<h2 id="log-source"><a class="anchor" href="#log-source" aria-label="Link to this section">#</a>Which log source? The one real decision</h2>
+
+<p>CloudFront makes you choose.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th></th><th><code>standard</code> <span class="pill">default</span></th><th><code>realtime</code></th></tr></thead>
+<tbody>
+<tr><td>Idle cost</td><td><strong>none</strong></td><td>~$11/mo per Kinesis shard</td></tr>
+<tr><td>At 1M req/mo</td><td>~$0.15</td><td>~$11</td></tr>
+<tr><td>Latency</td><td>~1&ndash;2 min</td><td>seconds</td></tr>
+<tr><td>Headers</td><td>User-Agent, Referer, Host, X-Forwarded-For</td><td><strong>full viewer header set</strong></td></tr>
+<tr><td>Web Bot Auth signatures</td><td>no</td><td><strong>yes</strong></td></tr>
+<tr><td>Client hints (<code>sec-ch-ua</code>)</td><td>no</td><td><strong>yes</strong></td></tr>
+</tbody>
+</table>
+</div>
+
+<p>Start on <code>standard</code>. Move to <code>realtime</code> when you want to <em>verify</em> an
+agent rather than take its User-Agent at face value: standard logging v2 has no
+<code>cs-headers</code> field, so <code>signature-agent</code> / <code>signature-input</code> /
+<code>signature</code> never arrive at all. That is not a tuning problem &mdash; it is a different
+log source.</p>
+
+<p><a href="gcp.html#headers">GCP has no such trade</a>: it carries named headers on the cheap
+path.</p>
+
+<h2 id="gotchas"><a class="anchor" href="#gotchas" aria-label="Link to this section">#</a>Before you trust the numbers</h2>
+
+<p>Four behaviours that are easy to mistake for bugs. All measured on a live deployment, all
+written up in <code>aws/NOTES.md</code>.</p>
+
+<div class="aside caution" role="note"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg><div class="body">
+  <p><b class="label">Real-time logs are best-effort</b></p>
+  <p>CloudFront delivers real-time logs on a best-effort basis; some requests are never written to
+  Kinesis at all. Measured across five runs (188 requests) at <code>sampling_rate = 100</code>: four
+  delivered 100%, one delivered 20 of 30. The lost records correlated with nothing &mdash; not status
+  code, path, client or latency &mdash; and Kinesis <code>IncomingRecords</code> confirmed they were
+  never sent rather than lost downstream.</p>
+  <p>Treat the counts as a high-fidelity sample, not an exact ledger. Do not reconcile them against
+  origin logs or bill directly on them.</p>
+</div></div>
+<div class="aside note" role="note"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/></svg><div class="body">
+  <p><b class="label">Delivery is at-least-once</b></p>
+  <p>If any event in a Firehose batch fails to forward, the adapter fails the whole batch so
+  Firehose retries &mdash; which duplicates the events that already landed. After
+  <code>retry_duration</code> the batch goes to the backup bucket rather than being dropped.</p>
+</div></div>
+<div class="aside note" role="note"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/></svg><div class="body">
+  <p><b class="label">Latency floor: 60&ndash;90s</b></p>
+  <p>CloudFront flushes real-time logs continuously, but Firehose buffers for at least 60s. That is a
+  floor, not a tuning knob.</p>
+</div></div>
+<div class="aside warning" role="note"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg><div class="body">
+  <p><b class="label">The LogDeliveryEnabled tag</b></p>
+  <p>Standard logging v2 writes through the <code>AWSServiceRoleForLogDelivery</code> service-linked
+  role, whose policy allows <code>firehose:PutRecordBatch</code> <strong>only on streams tagged
+  <code>LogDeliveryEnabled = true</code></strong>. Without the tag CloudFront delivers
+  <strong>nothing</strong>, and there is no error anywhere &mdash; the delivery reports healthy, the
+  Firehose reports healthy, and <code>IncomingRecords</code> simply stays at zero.</p>
+  <p>The module applies the tag automatically. Worth knowing if you ever hand-build this.</p>
+</div></div>
+<h3 id="parsing"><a class="anchor" href="#parsing" aria-label="Link to this section">#</a>Two CloudFront parsing behaviours (realtime only)</h3>
+
+<p>Both are handled by the adapter. They are documented because they bite anyone reading the raw
+Kinesis stream themselves. Standard mode is self-describing JSON, so neither applies there.</p>
+
+<ol>
+<li><strong>Field order is not your field order.</strong> CloudFront emits real-time log fields in
+its own canonical order, ignoring the order in the log config. Records are tab-separated with no
+header row, so a positional parser that trusts the config order reads every column shifted. The
+module sorts <code>log_fields</code> into canonical order and hands that same list to the adapter;
+<code>log_fields_in_order</code> exports it.</li>
+<li><strong><code>cs-uri-stem</code> includes the query string</strong> in real-time logs, unlike
+standard access logs where it is path-only. The adapter strips it, or every distinct query string
+would register as its own path in the analytics.</li>
+</ol>
+
+<h2 id="why-lambda"><a class="anchor" href="#why-lambda" aria-label="Link to this section">#</a>Why the adapter Lambda exists at all</h2>
+
+<p>Firehose's HTTP endpoint destination cannot post to <code>/v1/events</code> directly:</p>
+
+<ul>
+<li>it wraps records in <code>{requestId, timestamp, records:[{data}]}</code></li>
+<li>it sends the key as <code>X-Amz-Firehose-Access-Key</code>, and cannot send arbitrary headers
+such as <code>x-obsero-domain</code> / <code>x-obsero-key</code></li>
+<li>it requires a specific JSON ack back, or treats the delivery as failed</li>
+</ul>
+
+<p>The adapter unwraps the envelope, converts each log line into one Obsero event, strips excluded
+headers, and returns the ack. Its Function URL is unauthenticated at the AWS layer &mdash; Firehose
+cannot SigV4-sign to a Function URL &mdash; so the shared Firehose access key is what the handler
+checks. The URL is not secret, but is useless without that key.</p>
+
+<h3 id="concurrency"><a class="anchor" href="#concurrency" aria-label="Link to this section">#</a>Concurrency footprint</h3>
+
+<p>The adapter uses <strong>one concurrent Lambda execution per Kinesis shard</strong>. Firehose
+reads each shard serially and invokes once per buffer window, so at the default
+<code>kinesis_shard_count = 1</code> the steady state is exactly 1 concurrent execution, ~1s per
+invocation, one invocation per minute. Measured, not estimated.</p>
+
+<p>That matters on accounts with a low concurrency ceiling. New AWS accounts are capped at
+<strong>10 concurrent executions account-wide</strong>, and at that ceiling
+<code>reserved_concurrent_executions</code> cannot be set at all &mdash; AWS requires unreserved
+concurrency to stay at or above 10, so any reservation is rejected. The adapter therefore shares an
+unprotected pool with every other function in the account.</p>
+
+<p>If another function saturates the pool, the Function URL returns 429, Firehose treats it as a
+failed delivery, retries for <code>retry_duration</code>, and then writes the batch to the backup
+bucket. Nothing is lost, but those events do not reach Obsero until the backup is replayed. Watch
+<code>Throttles</code> if you share a small pool.</p>
+
+<h2 id="cost"><a class="anchor" href="#cost" aria-label="Link to this section">#</a>Cost</h2>
+
+<p>Lambda, CloudFront and S3 usage at demo volume sit inside the AWS free tier. Kinesis Data Streams
+does not have a free tier &mdash; one provisioned shard is about <strong>$11/month</strong>
+($0.015/shard-hour) and is <code>realtime</code> mode's floor cost, since CloudFront real-time logs
+can only be delivered to Kinesis. Firehose adds ~$0.029/GB ingested, which is cents at typical
+volumes.</p>
+
+<p>In <code>standard</code> mode there is no Kinesis stream and therefore no idle cost at all;
+Firehose only reaches $11/month at roughly 380M requests.</p>
+
+<h2 id="teardown"><a class="anchor" href="#teardown" aria-label="Link to this section">#</a>Tearing it down</h2>
+
+<pre><code>make destroy      <span class="c"># terraform destroy, then check nothing is left standing</span>
+make leftovers    <span class="c"># just tell me what is still deployed</span></code></pre>
+
+<p>Both call <code>destroy.sh</code>, which empties the S3 buckets first &mdash; Terraform refuses to
+delete a bucket holding objects it did not create, and that is precisely what the backup bucket
+collects.</p>
+
+<p>The module itself keeps <code>backup_force_destroy = false</code>, so a customer's
+<code>terraform destroy</code> will <em>stop</em> rather than silently discard events that never
+reached Obsero. The demo site sets it to <code>true</code>, because nobody is going to replay
+those.</p>
+
+
+      <div class="helpful">
+        <span>Was this page helpful?</span>
+        <span class="thumbs">
+          <a class="thumb" href="https://github.com/Obsero-ai/obsero-public/issues/new?title=Docs:+AWS" aria-label="Yes, this page was helpful"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M1 21h4V9H1v12zm22-11c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.59 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-2z"/></svg></a>
+          <a class="thumb" href="https://github.com/Obsero-ai/obsero-public/issues/new?title=Docs:+AWS" aria-label="No, this page needs work"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3H6c-.83 0-1.54.5-1.84 1.22l-3.02 7.05c-.09.23-.14.47-.14.73v2c0 1.1.9 2 2 2h6.31l-.95 4.57-.03.32c0 .41.17.79.44 1.06L9.83 23l6.59-6.59c.36-.36.58-.86.58-1.41V5c0-1.1-.9-2-2-2zm4 0v12h4V3h-4z"/></svg></a>
+        </span>
+      </div>
+
+      <nav class="nextprev" aria-label="Pagination">
+        <a href="contract.html">&larr; The contract</a>
+        <a href="gcp.html">GCP &rarr;</a>
+      </nav>
+    </article>
+
+      <aside class="toc">
+        <div class="toc-inner">
+          <h2>On this page</h2>
+          <ul>
+          <li><a href="#try-it">Try it without an AWS account</a></li>
+          <li><a href="#wiring-it-in">Wiring it into your own distribution</a></li>
+          <li><a href="#log-source">Which log source? The one real decision</a></li>
+          <li><a href="#gotchas">Before you trust the numbers</a></li>
+          <li class="sub"><a href="#parsing">Two CloudFront parsing behaviours (realtime only)</a></li>
+          <li><a href="#why-lambda">Why the adapter Lambda exists at all</a></li>
+          <li class="sub"><a href="#concurrency">Concurrency footprint</a></li>
+          <li><a href="#cost">Cost</a></li>
+          <li><a href="#teardown">Tearing it down</a></li>
+          </ul>
+        </div>
+      </aside>
+
+    <div class="pagefoot">
+      <p>Reference implementations for streaming CDN request logs to Obsero &mdash; a starting point, not a product. Fork it and keep the parts that match your stack. <a href="https://github.com/Obsero-ai/obsero-public">Source on GitHub</a>.</p>
+      <p>Measured numbers on these pages come from live deployments and are recorded in each cloud's <code>NOTES.md</code>. Confirm current cloud pricing before quoting any cost figure.</p>
+    </div>
+  </div>
+</div>
+
+<script src="assets/search-index.js" defer></script>
+<script src="assets/docs.js" defer></script>
+</body>
+</html>

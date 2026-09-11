@@ -1,0 +1,30 @@
+# https://editorconfig.org
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+# Terraform's canonical style, as produced by `terraform fmt`.
+[*.tf]
+indent_size = 2
+
+[*.{py,sh}]
+indent_size = 4
+
+# Tabs are syntax in a Makefile, not a preference.
+[Makefile]
+indent_style = tab
+
+[*.md]
+# Two trailing spaces are a hard line break in Markdown.
+trim_trailing_whitespace = false
+
+# Vendored verbatim — do not reformat.
+[{LICENSE,NOTICE,*.lock.hcl}]
+insert_final_newline = false
+trim_trailing_whitespace = false

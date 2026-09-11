@@ -1,0 +1,158 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Least privilege: nothing here needs to write to the repo.
+permissions:
+  contents: read
+
+# A new push to a PR cancels the run still going for the old commit.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Adapter tests (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['20', '22']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      # No install step: obsero.mjs and both adapters are dependency-free by
+      # design, and the tests use Node's built-in runner.
+      - name: AWS adapter vs. the contract
+        run: node --test aws/test/adapter.test.mjs
+
+      - name: GCP adapter vs. the contract
+        run: node --test gcp/test/adapter.test.mjs
+
+      - name: obsero.mjs parses and exports the contract
+        run: |
+          node --input-type=module -e '
+            import { buildEvent, validateEvent } from "./obsero.mjs";
+            const e = buildEvent({
+              path: "/pricing?ref=x",
+              method: "get",
+              statusCode: 200,
+              headers: { "User-Agent": "curl/8", cookie: "nope" },
+            });
+            const problems = validateEvent(e);
+            if (problems?.length) throw new Error("invalid event: " + problems.join("; "));
+            if (e.path !== "/pricing") throw new Error("query string was not stripped: " + e.path);
+            if (e.method !== "GET") throw new Error("method was not upcased: " + e.method);
+            if ("cookie" in e.headers) throw new Error("cookie must never be forwarded");
+            console.log("contract ok:", JSON.stringify(e));
+          '
+
+  terraform:
+    name: Terraform ${{ matrix.dir }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The four deployable modules. ingestion/examples/* are illustrative
+        # snippets, not standalone modules, so they are formatted but not validated.
+        dir:
+          - aws/ingestion
+          - aws/site/terraform
+          - gcp/ingestion
+          - gcp/site/terraform
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: '1.16.1'
+          terraform_wrapper: false
+
+      # -backend=false: validation needs the providers, not a state backend,
+      # so this runs without any cloud credentials.
+      - name: terraform init
+        run: terraform -chdir=${{ matrix.dir }} init -backend=false -input=false
+
+      - name: terraform validate
+        run: terraform -chdir=${{ matrix.dir }} validate -no-color
+
+  fmt:
+    name: terraform fmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: '1.16.1'
+          terraform_wrapper: false
+
+      - name: Check formatting
+        run: terraform fmt -check -recursive -diff aws gcp
+
+  shell:
+    name: Shell scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Syntax check
+        run: bash -n setup.sh destroy.sh
+
+      - name: ShellCheck
+        run: shellcheck --severity=error setup.sh destroy.sh
+
+  docs:
+    name: Docs are in sync
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # build.py is deterministic. If regenerating changes a tracked file, the
+      # committed site drifted from its source and the published docs would be stale.
+      - name: Regenerate the docs chrome
+        run: python3 docs/build.py
+
+      - name: Fail if that changed anything
+        run: |
+          if ! git diff --exit-code --stat; then
+            echo "::error::docs/ is out of date. Run 'python3 docs/build.py' and commit the result."
+            exit 1
+          fi
+
+  secrets:
+    name: No secrets committed
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # A belt-and-braces check on top of .gitignore: these must never be tracked.
+      - name: No state or tfvars in the index
+        run: |
+          if git ls-files | grep -E '(^|/)terraform\.tfvars$|\.tfstate($|\.)' ; then
+            echo "::error::Terraform state or tfvars is committed. Both contain the site token in cleartext."
+            exit 1
+          fi
+          echo "no state or tfvars tracked"
+
+      - name: No obvious credentials in tracked files
+        run: |
+          if git grep -nIE 'AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}|-----BEGIN [A-Z ]*PRIVATE KEY' -- . ; then
+            echo "::error::A credential pattern appears in a tracked file."
+            exit 1
+          fi
+          echo "no credential patterns found"

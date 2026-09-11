@@ -1,0 +1,14 @@
+# terraform
+.terraform/
+.build/
+*.tfstate
+*.tfstate.*
+tfplan
+terraform.tfvars
+
+# traffic-harness run manifests
+test/.runs/
+**/test/.runs/
+
+node_modules/
+.DS_Store

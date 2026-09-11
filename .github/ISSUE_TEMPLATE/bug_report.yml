@@ -1,0 +1,93 @@
+name: Bug report
+description: Something in this repo does not behave the way it is documented.
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing: the [troubleshooting index](https://obsero-ai.github.io/obsero-public/troubleshooting.html)
+        covers the common ones, and **most reported bugs turn out to be documented
+        behaviour of the underlying cloud service**.
+
+        Never paste a site token, a cloud credential, or raw `terraform.tfstate`.
+
+  - type: dropdown
+    id: cloud
+    attributes:
+      label: Which cloud
+      options:
+        - AWS (CloudFront)
+        - GCP (load balancer)
+        - Neither — obsero.mjs / the contract itself
+        - Docs
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where it went wrong
+      options:
+        - setup.sh — deploying the demo site
+        - setup.sh — creating the ingestion pipeline
+        - The adapter — events are wrong, or malformed
+        - No events arrive at Obsero at all
+        - destroy.sh — teardown or leftover resources
+        - Terraform — plan or apply fails
+        - Tests
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you expected, and what you got instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. ./setup.sh aws site
+        2. ./setup.sh aws pipeline --token <redacted>
+        3. ./setup.sh aws traffic -n 40
+        4. Only 12 of 40 events arrived
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant output
+      description: >
+        Error text, the failing `terraform` output, or adapter logs.
+        Redact tokens, account IDs, and project IDs. This is rendered as a code
+        block, so no backticks needed.
+      render: shell
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      value: |
+        - OS:
+        - `terraform version`:
+        - `node --version`:
+        - Region:
+        - Log source (AWS only: standard or realtime):
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I checked the troubleshooting page.
+          required: true
+        - label: I have removed every token, credential, and account identifier from this report.
+          required: true
