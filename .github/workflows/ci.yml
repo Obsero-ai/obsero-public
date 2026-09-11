@@ -25,7 +25,7 @@ jobs:
       matrix:
         node: ['20', '22']
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v4
         with:
@@ -71,7 +71,7 @@ jobs:
           - gcp/ingestion
           - gcp/site/terraform
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: hashicorp/setup-terraform@v3
         with:
@@ -90,7 +90,7 @@ jobs:
     name: terraform fmt
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: hashicorp/setup-terraform@v3
         with:
@@ -104,7 +104,7 @@ jobs:
     name: Shell scripts
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Syntax check
         run: bash -n setup.sh destroy.sh
@@ -116,7 +116,7 @@ jobs:
     name: Docs are in sync
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-python@v5
         with:
@@ -138,7 +138,7 @@ jobs:
     name: No secrets committed
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # A belt-and-braces check on top of .gitignore: these must never be tracked.
       - name: No state or tfvars in the index
