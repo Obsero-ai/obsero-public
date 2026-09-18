@@ -30,7 +30,8 @@ Then, if you want to watch it work end to end — `../setup.sh aws` walks throug
 it as a menu, or drive the same thing with make:
 
 ```bash
-make deploy            # demo site + pipeline
+make deploy            # demo site + pipeline, connected to each other
+make connect           # pick distributions already in the account
 make traffic N=40      # mock browser / AI-agent / crawler traffic
 make check             # score what actually reached the endpoint
 make logs              # follow the adapter forwarding, live
@@ -41,9 +42,13 @@ make destroy           # tear it all down again
 
 ## Wiring it into your own distribution
 
-One module block. The module **never touches your distribution** — it builds
-the pipeline and hands back what you attach, so it works whether or not
-Terraform manages your CloudFront.
+One module block. The module **never touches your distribution** — standard
+mode needs only its ARN, realtime mode hands back an ARN for you to attach — so
+it works whether or not Terraform manages your CloudFront.
+
+The quickest way is `../setup.sh aws`: step 2 builds the pipeline, step 3 lists
+the distributions in your account and connects the ones you pick. In your own
+Terraform it looks like this:
 
 ```hcl
 module "obsero_ingestion" {
@@ -53,13 +58,16 @@ module "obsero_ingestion" {
   site_token  = var.obsero_site_token
 
   # standard: CloudFront delivers straight into Firehose. No idle cost.
-  log_source       = "standard"
-  distribution_arn = aws_cloudfront_distribution.site.arn
+  log_source        = "standard"
+  distribution_arns = [aws_cloudfront_distribution.site.arn]
 }
 ```
 
-That is the whole integration for `standard`. For `realtime`, drop
-`distribution_arn` and attach the exported ARN to each cache behaviour you want
+That is the whole integration for `standard`. `distribution_arns` may be empty
+(the pipeline sits idle) and may name distributions Terraform does not manage.
+One that already has a standard logging v2 source also goes in
+`existing_delivery_sources`, since a distribution can only have one. For
+`realtime`, drop `distribution_arns` and attach the exported ARN to each cache behaviour you want
 logged instead:
 
 ```hcl

@@ -50,7 +50,7 @@ make event TOKEN=<tracking-id> DOMAIN=acme.com   # is the token accepted?
 Then:
 
 ```bash
-../setup.sh gcp            # menu: 1 site, 2 pipeline, 3 destroy
+../setup.sh gcp            # menu: 1 site, 2 pipeline, 4 destroy (3 connect is AWS-only)
 ```
 
 `setup.sh` step 1 is a targeted apply of the site only

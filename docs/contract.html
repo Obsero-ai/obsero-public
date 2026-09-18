@@ -9,6 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&amp;family=Roboto+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
 <link rel="stylesheet" href="assets/docs.css">
+<link rel="alternate" type="text/markdown" href="contract.md" title="This page as Markdown">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='10' fill='%231a73e8'/%3E%3Ccircle cx='12' cy='12' r='4' fill='white'/%3E%3C/svg%3E">
 </head>
 <body>
@@ -200,8 +201,8 @@ will accept what you produce.</p>
 3. TRANSPORT        unwrap the batch, ack it          <span class="c">&lt;- yours to rewrite</span></code></pre>
 
 <ul>
-<li><code>aws/ingestion/lambda/adapter/index.mjs</code></li>
-<li><code>gcp/ingestion/adapter/index.mjs</code></li>
+<li><a class="src" href="https://github.com/Obsero-ai/obsero-public/blob/main/aws/ingestion/lambda/adapter/index.mjs"><code>aws/ingestion/lambda/adapter/index.mjs</code></a></li>
+<li><a class="src" href="https://github.com/Obsero-ai/obsero-public/blob/main/gcp/ingestion/adapter/index.mjs"><code>gcp/ingestion/adapter/index.mjs</code></a></li>
 </ul>
 
 <p>Change parts 2 and 3 to match your log source, leave part 1 alone, then run
@@ -215,10 +216,20 @@ read it from a gitignored <code>terraform.tfvars</code>:</p>
 
 <pre><code>obsero_site_token = "..."</code></pre>
 
-<p><code>setup.sh</code> writes that file for you, <code>chmod 600</code>. The deployed adapters
+<p><a class="src" href="https://github.com/Obsero-ai/obsero-public/blob/main/setup.sh"><code>setup.sh</code></a> writes that file for you, <code>chmod 600</code>. The deployed adapters
 read <code>x-obsero-domain</code> off each request's own Host header, so there is no domain to
 configure &mdash; only the token.</p>
 
+
+      <section class="srcbox" aria-label="Source on GitHub">
+        <p class="srcbox-title">Code on this page</p>
+        <ul>
+          <li><a href="https://github.com/Obsero-ai/obsero-public/blob/main/obsero.mjs"><code>obsero.mjs</code></a> <span>buildEvent, validateEvent, sendEvent</span></li>
+          <li><a href="https://github.com/Obsero-ai/obsero-public/blob/main/aws/test/adapter.test.mjs"><code>aws/test/adapter.test.mjs</code></a> <span>the AWS adapter checked against the contract</span></li>
+          <li><a href="https://github.com/Obsero-ai/obsero-public/blob/main/gcp/test/adapter.test.mjs"><code>gcp/test/adapter.test.mjs</code></a> <span>the GCP adapter checked against the contract</span></li>
+        </ul>
+        <p class="srcbox-links"><a href="https://github.com/Obsero-ai/obsero-public/edit/main/docs/contract.html">Edit this page on GitHub</a><a href="contract.md">View as Markdown</a><a href="llms.txt">llms.txt for agents</a></p>
+      </section>
 
       <div class="helpful">
         <span>Was this page helpful?</span>

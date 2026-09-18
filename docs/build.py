@@ -15,14 +15,21 @@ It re-derives, from that prose, the things that would otherwise drift:
   * assets/search-index.js -- the full text of every section, so the sidebar
     search finds terms that appear only in body copy
   * breadcrumbs, prev/next links, <title> and meta description
+  * links to GitHub: any <code>path</code> in the prose that names a file in
+    the repo, plus the "Code on this page" box from SOURCES below
+  * a Markdown copy of every page (docs/<page>.md), llms.txt and
+    llms-full.txt -- the same docs in the shape coding agents read best
 
 Running it twice in a row produces byte-identical files, so it is safe to run
 any time you are unsure. Standard library only.
 """
-import os, re, html, json
+import os, re, html, json, subprocess
+from html.parser import HTMLParser
 
 DOCS = "docs"
 REPO = "https://github.com/Obsero-ai/obsero-public"
+BRANCH = "main"
+SITE = "https://obsero-ai.github.io/obsero-public/"
 ISSUES = REPO + "/issues/new"
 
 PAGES = [
@@ -30,7 +37,7 @@ PAGES = [
     ("index.html",           "Overview",        "Get started",
      "Stream every CDN request to Obsero so AI agent traffic can be classified on request headers. Reference implementations for AWS CloudFront and Google Cloud."),
     ("quickstart.html",      "Quickstart",      "Get started",
-     "One command: deploy a mock site, create the ingestion pipeline with your tracking ID, then tear it all down."),
+     "Step by step: deploy a mock site, deploy the ingestion pipeline with your tracking ID, connect it to your CloudFront distributions, then tear it all down."),
     ("contract.html",        "The contract",    "Reference",
      "The URL you POST to and the payload Obsero expects. The only thing you have to get right."),
     ("aws.html",             "AWS",             "Deployment guides",
@@ -40,6 +47,52 @@ PAGES = [
     ("troubleshooting.html", "Troubleshooting", "Support",
      "Symptom, cause, fix for both clouds. Most reported bugs are documented behaviour of the underlying service."),
 ]
+
+# The files each page is about, shown as "Code on this page" under the prose.
+# A path that stops existing fails the build rather than shipping a dead link.
+SOURCES = {
+    "index.html": [
+        ("README.md",       "the same overview, as it reads on GitHub"),
+        ("AGENTS.md",       "instructions for a coding agent working in the repo"),
+        ("obsero.mjs",      "the contract as code: build, validate and POST an event"),
+    ],
+    "quickstart.html": [
+        ("setup.sh",        "the interactive installer this page walks through"),
+        ("destroy.sh",      "teardown, and the sweep for leftovers"),
+        ("aws/Makefile",    "every AWS task, one make target each"),
+        ("gcp/Makefile",    "every GCP task, one make target each"),
+    ],
+    "contract.html": [
+        ("obsero.mjs",                "buildEvent, validateEvent, sendEvent"),
+        ("aws/test/adapter.test.mjs", "the AWS adapter checked against the contract"),
+        ("gcp/test/adapter.test.mjs", "the GCP adapter checked against the contract"),
+    ],
+    "aws.html": [
+        ("aws/ingestion/main.tf",                 "the pipeline: Firehose, log deliveries, backup bucket"),
+        ("aws/ingestion/variables.tf",            "every module input, with its validation"),
+        ("aws/ingestion/lambda/adapter/index.mjs", "the adapter Lambda"),
+        ("aws/site/terraform/main.tf",            "the demo stack: mock site plus one module block"),
+        ("aws/NOTES.md",                          "behaviour measured on live deployments"),
+        ("aws/AGENTS.md",                         "the AWS playbook for coding agents"),
+    ],
+    "gcp.html": [
+        ("gcp/ingestion/main.tf",           "the pipeline: sink, Pub/Sub, Cloud Run adapter"),
+        ("gcp/ingestion/variables.tf",      "every module input, with its validation"),
+        ("gcp/ingestion/adapter/index.mjs", "the Cloud Run adapter"),
+        ("gcp/site/terraform/main.tf",      "the demo stack: mock site plus one module block"),
+        ("gcp/PERMISSIONS.md",              "the IAM roles, and why Editor is not enough"),
+        ("gcp/NOTES.md",                    "behaviour measured on live deployments"),
+    ],
+    "troubleshooting.html": [
+        ("aws/NOTES.md",  "AWS behaviour measured on live deployments"),
+        ("gcp/NOTES.md",  "GCP behaviour measured on live deployments"),
+        ("destroy.sh",    "what --check and --sweep look for"),
+    ],
+}
+
+# Relative paths in a cloud page's prose (ingestion/README.md) resolve against
+# that cloud's directory first.
+PATH_CONTEXT = {"aws.html": "aws/", "gcp.html": "gcp/"}
 
 ICONS = {
     "note":    "M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z",
@@ -59,10 +112,91 @@ def strip_tags(s):
 def extract_body(path):
     s = open(path, encoding="utf-8").read()
     m = (re.search(r"<main>\n(.*?)\n    </main>", s, re.S)
-         or re.search(r'      </nav>\n\n(.*?)\n\n      <div class="helpful">', s, re.S))
+         or re.search(r'      </nav>\n\n(.*?)\n\n      <(?:section class="srcbox"|div class="helpful")', s, re.S))
     if not m:
         raise SystemExit("could not find the article body in " + path)
-    return m.group(1)
+    # Source links are re-derived on every build, like heading anchors.
+    return re.sub(r'<a class="src" href="[^"]*">(<code>.*?</code>)</a>', r"\1", m.group(1), flags=re.S)
+
+
+# --- links to the code on GitHub ---------------------------------------------
+
+def repo_paths():
+    """Files and directories in the repo, as git sees them.
+
+    Tracked plus untracked-but-not-ignored, so a new file links before it is
+    committed and a gitignored one (terraform.tfvars) never does -- the result
+    is the same on a dev machine and in CI.
+    """
+    try:
+        out = subprocess.run(["git", "ls-files", "--cached", "--others", "--exclude-standard"],
+                             capture_output=True, text=True, check=True).stdout.split("\n")
+    except (OSError, subprocess.CalledProcessError):
+        raise SystemExit("docs/build.py needs git, run from the repo root")
+    files = {f for f in out if f}
+    # Generated below; list them now so the first build links them like the second.
+    files |= {"docs/llms.txt", "docs/llms-full.txt"} | {"docs/" + f[:-5] + ".md" for f, *_ in PAGES}
+    dirs = set()
+    for f in files:
+        parts = f.split("/")
+        for i in range(1, len(parts)):
+            dirs.add("/".join(parts[:i]))
+    return files, dirs
+
+
+FILES, DIRS = repo_paths()
+
+
+def github_url(path):
+    path = path.rstrip("/")
+    kind = "tree" if path in DIRS else "blob"
+    return "%s/%s/%s/%s" % (REPO, kind, BRANCH, path)
+
+
+def resolve_path(text, page):
+    """The repo path a <code> span names, or None if it is not one."""
+    text = html.unescape(text).strip()
+    if text.startswith("../"):
+        text = text[3:]
+    for cand in [PATH_CONTEXT.get(page, "") + text, text]:
+        c = cand.rstrip("/")
+        if c and (c in FILES or c in DIRS):
+            return c
+    return None
+
+
+def link_paths(body, page):
+    """<code>aws/NOTES.md</code> -> the same, linked to the file on GitHub.
+
+    Leaves code blocks and code that is already inside a link alone.
+    """
+    def repl(m):
+        path = resolve_path(m.group(1), page)
+        if not path:
+            return m.group(0)
+        return '<a class="src" href="%s"><code>%s</code></a>' % (github_url(path), m.group(1))
+
+    parts = re.split(r"(<pre>.*?</pre>|<a [^>]*>.*?</a>)", body, flags=re.S)
+    return "".join(p if p.startswith(("<pre>", "<a ")) else re.sub(r"<code>([^<]+)</code>", repl, p)
+                   for p in parts)
+
+
+def srcbox(f):
+    items = SOURCES.get(f, [])
+    for path, _ in items:
+        if path not in FILES:
+            raise SystemExit("SOURCES[%r] names %s, which is not in the repo" % (f, path))
+    lis = "\n".join('          <li><a href="%s"><code>%s</code></a> <span>%s</span></li>'
+                    % (github_url(path), html.escape(path), html.escape(note)) for path, note in items)
+    md = f[:-5] + ".md"
+    return ('      <section class="srcbox" aria-label="Source on GitHub">\n'
+            '        <p class="srcbox-title">Code on this page</p>\n'
+            '        <ul>\n%s\n        </ul>\n'
+            '        <p class="srcbox-links">'
+            '<a href="%s/edit/%s/docs/%s">Edit this page on GitHub</a>'
+            '<a href="%s">View as Markdown</a>'
+            '<a href="llms.txt">llms.txt for agents</a></p>\n'
+            '      </section>\n' % (lis, REPO, BRANCH, f, md))
 
 
 def to_asides(body):
@@ -188,7 +322,7 @@ THUMB_DN = "M15 3H6c-.83 0-1.54.5-1.84 1.22l-3.02 7.05c-.09.23-.14.47-.14.73v2c0
 
 def render(i):
     f, title, group, desc = PAGES[i]
-    body = add_anchors(to_asides(bodies[f]))
+    body = link_paths(add_anchors(to_asides(bodies[f])), f)
 
     crumbs = ['<a href="index.html">Obsero ingestion</a>',
               '<span aria-hidden="true">&rsaquo;</span>',
@@ -216,6 +350,7 @@ def render(i):
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&amp;family=Roboto+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
 <link rel="stylesheet" href="assets/docs.css">
+<link rel="alternate" type="text/markdown" href="{f[:-5]}.md" title="This page as Markdown">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='10' fill='%231a73e8'/%3E%3Ccircle cx='12' cy='12' r='4' fill='white'/%3E%3C/svg%3E">
 </head>
 <body>
@@ -245,6 +380,7 @@ def render(i):
 
 {body}
 
+{srcbox(f)}
       <div class="helpful">
         <span>Was this page helpful?</span>
         <span class="thumbs">
@@ -274,6 +410,233 @@ def render(i):
 """
 
 
+# --- Markdown for agents ------------------------------------------------------
+#
+# Every page again as Markdown, plus llms.txt (an index) and llms-full.txt (all
+# of it in one file). Generated from the same bodies, so it cannot drift from
+# the HTML. A small tree walk, not a general converter: it knows exactly the
+# markup these pages use, and anything else falls back to its text.
+
+VOID = {"br", "hr", "img", "meta", "link", "input", "path"}
+BLOCK = {"p", "pre", "h1", "h2", "h3", "h4", "ul", "ol", "table", "div", "figure", "blockquote", "section"}
+
+
+class Node:
+    def __init__(self, tag, attrs):
+        self.tag, self.attrs, self.children = tag, dict(attrs), []
+
+    def cls(self):
+        return self.attrs.get("class") or ""
+
+
+class TreeBuilder(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.root = Node("root", [])
+        self.stack = [self.root]
+
+    def handle_starttag(self, tag, attrs):
+        node = Node(tag, attrs)
+        self.stack[-1].children.append(node)
+        if tag not in VOID:
+            self.stack.append(node)
+
+    def handle_startendtag(self, tag, attrs):
+        self.stack[-1].children.append(Node(tag, attrs))
+
+    def handle_endtag(self, tag):
+        for i in range(len(self.stack) - 1, 0, -1):
+            if self.stack[i].tag == tag:
+                del self.stack[i:]
+                return
+
+    def handle_data(self, data):
+        self.stack[-1].children.append(data)
+
+
+def raw_text(n):
+    if isinstance(n, str):
+        return n
+    if n.tag == "svg":
+        return ""
+    return "".join(raw_text(c) for c in n.children)
+
+
+def md_href(href):
+    m = re.match(r"^([a-z]+)\.html(#.*)?$", href)
+    if m:
+        return m.group(1) + ".md" + (m.group(2) or "")
+    return href
+
+
+def md_inline(nodes):
+    out = []
+    for n in nodes:
+        if isinstance(n, str):
+            out.append(re.sub(r"\s+", " ", n))
+        elif n.tag in ("svg",) or n.cls() == "anchor":
+            continue
+        elif n.tag == "code":
+            t = raw_text(n)
+            fence = "``" if "`" in t else "`"
+            out.append(fence + t + fence)
+        elif n.tag == "a":
+            out.append("[%s](%s)" % (md_inline(n.children).strip(), md_href(n.attrs.get("href", ""))))
+        elif n.tag in ("strong", "b"):
+            out.append("**%s**" % md_inline(n.children).strip())
+        elif n.tag == "em":
+            out.append("*%s*" % md_inline(n.children).strip())
+        elif n.tag == "br":
+            out.append("  \n")
+        else:
+            out.append(md_inline(n.children))
+    return "".join(out)
+
+
+def md_fence(text):
+    text = text.strip("\n")
+    fence = "````" if "```" in text else "```"
+    return "%s\n%s\n%s" % (fence, text, fence)
+
+
+def md_table(table):
+    rows = []
+    def walk(n):
+        for c in n.children:
+            if isinstance(c, Node):
+                if c.tag == "tr":
+                    rows.append([md_inline(td.children).strip().replace("|", "\\|")
+                                 for td in c.children if isinstance(td, Node) and td.tag in ("td", "th")])
+                else:
+                    walk(c)
+    walk(table)
+    if not rows:
+        return ""
+    width = max(len(r) for r in rows)
+    rows = [r + [""] * (width - len(r)) for r in rows]
+    lines = ["| " + " | ".join(rows[0]) + " |", "|" + "---|" * width]
+    lines += ["| " + " | ".join(r) + " |" for r in rows[1:]]
+    return "\n".join(lines)
+
+
+def md_list(n):
+    items = [c for c in n.children if isinstance(c, Node) and c.tag == "li"]
+    out = []
+    for i, li in enumerate(items):
+        marker = "%d. " % (i + 1) if n.tag == "ol" else "- "
+        lines = md_blocks(li.children).split("\n")
+        pad = " " * len(marker)
+        out.append("\n".join([marker + lines[0]] + [(pad + l) if l else "" for l in lines[1:]]))
+    return "\n".join(out)
+
+
+def md_block(n):
+    tag, cls = n.tag, n.cls()
+    if tag in ("h1", "h2", "h3", "h4"):
+        return "#" * int(tag[1]) + " " + md_inline(n.children).strip()
+    if tag == "p":
+        return md_inline(n.children).strip()
+    if tag == "pre" or cls == "flow":
+        return md_fence(raw_text(n))
+    if tag in ("ul", "ol"):
+        return md_list(n)
+    if tag == "table":
+        return md_table(n)
+    if tag == "figure":
+        cap = [c for c in n.children if isinstance(c, Node) and c.tag == "figcaption"]
+        rest = [c for c in n.children if not (isinstance(c, Node) and c.tag == "figcaption")]
+        head = "*%s*\n\n" % md_inline(cap[0].children).strip() if cap else ""
+        return head + md_blocks(rest)
+    if "aside" in cls.split():
+        kind = cls.split()[1] if len(cls.split()) > 1 else "note"
+        body = next((c for c in n.children if isinstance(c, Node) and c.cls() == "body"), n)
+        label = ""
+        kids = []
+        for c in body.children:
+            if isinstance(c, Node) and c.tag == "p" and any(
+                    isinstance(x, Node) and x.cls() == "label" for x in c.children):
+                label = raw_text(c).strip()
+            else:
+                kids.append(c)
+        head = "**%s%s**" % (kind.capitalize(), ": " + label if label else "")
+        inner = head + "\n\n" + md_blocks(kids)
+        return "\n".join(("> " + l) if l else ">" for l in inner.split("\n"))
+    if cls == "cards":
+        out = []
+        for a in n.children:
+            if isinstance(a, Node) and a.tag == "a":
+                h = next((c for c in a.children if isinstance(c, Node) and c.tag == "h3"), None)
+                p = next((c for c in a.children if isinstance(c, Node) and c.tag == "p"), None)
+                title = md_inline(h.children).strip().rstrip("→").strip() if h else ""
+                out.append("- [%s](%s)%s" % (title, md_href(a.attrs.get("href", "")),
+                                             " -- " + md_inline(p.children).strip() if p else ""))
+        return "\n".join(out)
+    return md_blocks(n.children)
+
+
+def md_blocks(nodes):
+    """Block-level Markdown for a run of nodes. Loose inline content between
+    blocks (text directly inside an <li>) becomes its own paragraph."""
+    out, run = [], []
+
+    def flush():
+        t = md_inline(run).strip()
+        if t:
+            out.append(t)
+        run.clear()
+
+    for n in nodes:
+        if isinstance(n, Node) and n.tag in BLOCK:
+            flush()
+            b = md_block(n)
+            if b.strip():
+                out.append(b)
+        elif isinstance(n, Node) and n.tag in ("svg",):
+            continue
+        else:
+            run.append(n)
+    flush()
+    return "\n\n".join(out)
+
+
+def to_markdown(f):
+    tb = TreeBuilder()
+    tb.feed(to_asides(bodies[f]))
+    md = md_blocks(tb.root.children)
+    items = SOURCES.get(f, [])
+    if items:
+        md += "\n\n## Code on this page\n\n" + "\n".join(
+            "- [`%s`](%s) -- %s" % (p, github_url(p), note) for p, note in items)
+    return ("<!-- Generated by docs/build.py from %s. Edit the HTML, not this file. -->\n\n%s\n"
+            % (f, md.strip()))
+
+
+def llms_txt(markdown):
+    lines = ["# Obsero ingestion", "",
+             "> " + PAGES[0][3], "",
+             "Reference implementations that stream every CDN request (AWS CloudFront, Google Cloud load "
+             "balancers) to Obsero so AI agent traffic can be classified on request headers. If you are a "
+             "coding agent working in the repository, read AGENTS.md first: it has the contract, the setup "
+             "order and the things that must not be \"cleaned up\".", "",
+             "## Docs", ""]
+    for f, t, g, d in PAGES:
+        lines.append("- [%s](%s%s): %s" % (t, SITE, f[:-5] + ".md", d))
+    lines += ["", "## Instructions for agents", "",
+              "- [AGENTS.md](%s): the contract, setup order and rules for the whole repo" % github_url("AGENTS.md"),
+              "- [aws/AGENTS.md](%s): AWS playbook, symptom -> cause -> fix" % github_url("aws/AGENTS.md"),
+              "- [gcp/AGENTS.md](%s): GCP playbook, symptom -> cause -> fix" % github_url("gcp/AGENTS.md"),
+              "", "## Code", ""]
+    seen = []
+    for f, *_ in PAGES:
+        for p, note in SOURCES.get(f, []):
+            if p not in seen:
+                seen.append(p)
+                lines.append("- [%s](%s): %s" % (p, github_url(p), note))
+    lines += ["", "## Optional", "",
+              "- [llms-full.txt](%sllms-full.txt): every page above in one file" % SITE]
+    return "\n".join(lines) + "\n"
+
+
 with open(os.path.join(DOCS, "assets", "search-index.js"), "w", encoding="utf-8") as fh:
     fh.write("/* Generated. Section index for the sidebar search in docs.js. */\n")
     fh.write("window.__DOCS_INDEX__ = %s;\n" % json.dumps(INDEX, separators=(",", ":")))
@@ -285,3 +648,17 @@ for i, (f, *_rest) in enumerate(PAGES):
     with open(os.path.join(DOCS, f), "w", encoding="utf-8") as fh:
         fh.write(out)
     print("wrote %-22s %6d bytes  %d sections" % (f, len(out), len(outlines[f])))
+
+MARKDOWN = {}
+for f, *_rest in PAGES:
+    MARKDOWN[f] = to_markdown(f)
+    name = f[:-5] + ".md"
+    with open(os.path.join(DOCS, name), "w", encoding="utf-8") as fh:
+        fh.write(MARKDOWN[f])
+    print("wrote %-22s %6d bytes" % (name, len(MARKDOWN[f])))
+
+for name, text in (("llms.txt", llms_txt(MARKDOWN)),
+                   ("llms-full.txt", "\n\n---\n\n".join(MARKDOWN[f] for f, *_ in PAGES))):
+    with open(os.path.join(DOCS, name), "w", encoding="utf-8") as fh:
+        fh.write(text)
+    print("wrote %-22s %6d bytes" % (name, len(text)))

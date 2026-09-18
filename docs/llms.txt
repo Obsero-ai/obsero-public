@@ -1,0 +1,48 @@
+# Obsero ingestion
+
+> Stream every CDN request to Obsero so AI agent traffic can be classified on request headers. Reference implementations for AWS CloudFront and Google Cloud.
+
+Reference implementations that stream every CDN request (AWS CloudFront, Google Cloud load balancers) to Obsero so AI agent traffic can be classified on request headers. If you are a coding agent working in the repository, read AGENTS.md first: it has the contract, the setup order and the things that must not be "cleaned up".
+
+## Docs
+
+- [Overview](https://obsero-ai.github.io/obsero-public/index.md): Stream every CDN request to Obsero so AI agent traffic can be classified on request headers. Reference implementations for AWS CloudFront and Google Cloud.
+- [Quickstart](https://obsero-ai.github.io/obsero-public/quickstart.md): Step by step: deploy a mock site, deploy the ingestion pipeline with your tracking ID, connect it to your CloudFront distributions, then tear it all down.
+- [The contract](https://obsero-ai.github.io/obsero-public/contract.md): The URL you POST to and the payload Obsero expects. The only thing you have to get right.
+- [AWS](https://obsero-ai.github.io/obsero-public/aws.md): CloudFront to Firehose to a Lambda adapter. Choosing a log source, measured gotchas, and cost.
+- [GCP](https://obsero-ai.github.io/obsero-public/gcp.md): Load balancer request logs to Pub/Sub to a Cloud Run adapter. Named headers on the cheap path, permissions, and cost.
+- [Troubleshooting](https://obsero-ai.github.io/obsero-public/troubleshooting.md): Symptom, cause, fix for both clouds. Most reported bugs are documented behaviour of the underlying service.
+
+## Instructions for agents
+
+- [AGENTS.md](https://github.com/Obsero-ai/obsero-public/blob/main/AGENTS.md): the contract, setup order and rules for the whole repo
+- [aws/AGENTS.md](https://github.com/Obsero-ai/obsero-public/blob/main/aws/AGENTS.md): AWS playbook, symptom -> cause -> fix
+- [gcp/AGENTS.md](https://github.com/Obsero-ai/obsero-public/blob/main/gcp/AGENTS.md): GCP playbook, symptom -> cause -> fix
+
+## Code
+
+- [README.md](https://github.com/Obsero-ai/obsero-public/blob/main/README.md): the same overview, as it reads on GitHub
+- [AGENTS.md](https://github.com/Obsero-ai/obsero-public/blob/main/AGENTS.md): instructions for a coding agent working in the repo
+- [obsero.mjs](https://github.com/Obsero-ai/obsero-public/blob/main/obsero.mjs): the contract as code: build, validate and POST an event
+- [setup.sh](https://github.com/Obsero-ai/obsero-public/blob/main/setup.sh): the interactive installer this page walks through
+- [destroy.sh](https://github.com/Obsero-ai/obsero-public/blob/main/destroy.sh): teardown, and the sweep for leftovers
+- [aws/Makefile](https://github.com/Obsero-ai/obsero-public/blob/main/aws/Makefile): every AWS task, one make target each
+- [gcp/Makefile](https://github.com/Obsero-ai/obsero-public/blob/main/gcp/Makefile): every GCP task, one make target each
+- [aws/test/adapter.test.mjs](https://github.com/Obsero-ai/obsero-public/blob/main/aws/test/adapter.test.mjs): the AWS adapter checked against the contract
+- [gcp/test/adapter.test.mjs](https://github.com/Obsero-ai/obsero-public/blob/main/gcp/test/adapter.test.mjs): the GCP adapter checked against the contract
+- [aws/ingestion/main.tf](https://github.com/Obsero-ai/obsero-public/blob/main/aws/ingestion/main.tf): the pipeline: Firehose, log deliveries, backup bucket
+- [aws/ingestion/variables.tf](https://github.com/Obsero-ai/obsero-public/blob/main/aws/ingestion/variables.tf): every module input, with its validation
+- [aws/ingestion/lambda/adapter/index.mjs](https://github.com/Obsero-ai/obsero-public/blob/main/aws/ingestion/lambda/adapter/index.mjs): the adapter Lambda
+- [aws/site/terraform/main.tf](https://github.com/Obsero-ai/obsero-public/blob/main/aws/site/terraform/main.tf): the demo stack: mock site plus one module block
+- [aws/NOTES.md](https://github.com/Obsero-ai/obsero-public/blob/main/aws/NOTES.md): behaviour measured on live deployments
+- [aws/AGENTS.md](https://github.com/Obsero-ai/obsero-public/blob/main/aws/AGENTS.md): the AWS playbook for coding agents
+- [gcp/ingestion/main.tf](https://github.com/Obsero-ai/obsero-public/blob/main/gcp/ingestion/main.tf): the pipeline: sink, Pub/Sub, Cloud Run adapter
+- [gcp/ingestion/variables.tf](https://github.com/Obsero-ai/obsero-public/blob/main/gcp/ingestion/variables.tf): every module input, with its validation
+- [gcp/ingestion/adapter/index.mjs](https://github.com/Obsero-ai/obsero-public/blob/main/gcp/ingestion/adapter/index.mjs): the Cloud Run adapter
+- [gcp/site/terraform/main.tf](https://github.com/Obsero-ai/obsero-public/blob/main/gcp/site/terraform/main.tf): the demo stack: mock site plus one module block
+- [gcp/PERMISSIONS.md](https://github.com/Obsero-ai/obsero-public/blob/main/gcp/PERMISSIONS.md): the IAM roles, and why Editor is not enough
+- [gcp/NOTES.md](https://github.com/Obsero-ai/obsero-public/blob/main/gcp/NOTES.md): behaviour measured on live deployments
+
+## Optional
+
+- [llms-full.txt](https://obsero-ai.github.io/obsero-public/llms-full.txt): every page above in one file

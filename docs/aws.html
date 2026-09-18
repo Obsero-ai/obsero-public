@@ -9,6 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&amp;family=Roboto+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
 <link rel="stylesheet" href="assets/docs.css">
+<link rel="alternate" type="text/markdown" href="aws.md" title="This page as Markdown">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='10' fill='%231a73e8'/%3E%3Ccircle cx='12' cy='12' r='4' fill='white'/%3E%3C/svg%3E">
 </head>
 <body>
@@ -52,6 +53,8 @@
         <ul class="subnav">
           <li><a href="#try-it">Try it without an AWS account</a></li>
           <li><a href="#wiring-it-in">Wiring it into your own distribution</a></li>
+          <li><a href="#connect">Connecting distributions you already run</a></li>
+          <li><a href="#what-it-creates">What the module creates</a></li>
           <li><a href="#log-source">Which log source? The one real decision</a></li>
           <li><a href="#gotchas">Before you trust the numbers</a></li>
           <li><a href="#why-lambda">Why the adapter Lambda exists at all</a></li>
@@ -95,7 +98,7 @@ make event TOKEN=&lt;tracking-id&gt; DOMAIN=acme.com    <span class="c"># POST o
 <p>Then, to watch it work end to end, <a href="quickstart.html">the quickstart</a> &mdash; or the
 make targets directly:</p>
 
-<pre><code>make deploy            <span class="c"># demo site + pipeline</span>
+<pre><code>make deploy            <span class="c"># demo site + pipeline, connected to each other</span>
 make traffic N=40      <span class="c"># mock browser / AI-agent / crawler traffic</span>
 make check             <span class="c"># score what actually reached the endpoint</span>
 make logs              <span class="c"># follow the adapter forwarding, live</span>
@@ -103,9 +106,9 @@ make destroy           <span class="c"># tear it all down again</span></code></p
 
 <h2 id="wiring-it-in"><a class="anchor" href="#wiring-it-in" aria-label="Link to this section">#</a>Wiring it into your own distribution</h2>
 
-<p>One module block. The module <strong>never touches your distribution</strong> &mdash; it builds
-the pipeline and hands back what you attach, so it works whether or not Terraform manages your
-CloudFront.</p>
+<p>One module block. The module <strong>never touches your distribution</strong> &mdash; in standard
+mode it only needs the distribution's ARN, and in realtime mode it hands back an ARN for you to
+attach &mdash; so it works whether or not Terraform manages your CloudFront.</p>
 
 <figure class="snippet">
 <figcaption>standard mode &mdash; the whole integration</figcaption>
@@ -116,12 +119,24 @@ CloudFront.</p>
   site_token  = var.obsero_site_token
 
   <span class="c"># CloudFront delivers straight into Firehose. No idle cost.</span>
-  log_source       = "standard"
-  distribution_arn = aws_cloudfront_distribution.site.arn
+  log_source        = "standard"
+  distribution_arns = [
+    aws_cloudfront_distribution.site.arn,
+    "arn:aws:cloudfront::123456789012:distribution/E2ABC123", <span class="c"># one Terraform does not manage</span>
+  ]
 }</code></pre>
 </figure>
 
-<p>For <code>realtime</code>, drop <code>distribution_arn</code> and attach the exported ARN to each
+<p><code>distribution_arns</code> can be empty: the pipeline is then built idle, costing nothing, until
+you add one. If a distribution already has a standard logging v2 source &mdash; the CloudFront console
+creates one the first time anyone enables that logging &mdash; also pass it in
+<code>existing_delivery_sources</code>, because a distribution can only have one:</p>
+
+<pre><code>existing_delivery_sources = {
+  "arn:aws:cloudfront::123456789012:distribution/E2ABC123" = "CreatedByCloudFront-E2ABC123"
+}</code></pre>
+
+<p>For <code>realtime</code>, drop <code>distribution_arns</code> and attach the exported ARN to each
 cache behaviour you want logged instead:</p>
 
 <pre><code>default_cache_behavior {
@@ -130,8 +145,56 @@ cache behaviour you want logged instead:</p>
 }</code></pre>
 
 <p>Behaviours without the ARN emit nothing, so you can roll it out one path pattern at a time. See
-<code>ingestion/examples/</code> for both shapes and <code>ingestion/README.md</code> for every
+<a class="src" href="https://github.com/Obsero-ai/obsero-public/tree/main/aws/ingestion/examples"><code>ingestion/examples/</code></a> for both shapes and <a class="src" href="https://github.com/Obsero-ai/obsero-public/blob/main/aws/ingestion/README.md"><code>ingestion/README.md</code></a> for every
 input.</p>
+
+<h2 id="connect"><a class="anchor" href="#connect" aria-label="Link to this section">#</a>Connecting distributions you already run</h2>
+
+<p>With <a class="src" href="https://github.com/Obsero-ai/obsero-public/blob/main/setup.sh"><code>setup.sh</code></a>, this is step 3: it lists every distribution in the account, detects
+existing logging sources for you, and writes both variables above into
+<code>aws/site/terraform/terraform.tfvars</code>. See <a href="quickstart.html#your-own-site">using your
+own site</a> for the walkthrough.</p>
+
+<pre><code>./setup.sh aws connect                        <span class="c"># pick from a list</span>
+./setup.sh aws connect --dist E2ABC123,E3DEF456 <span class="c"># exactly these</span>
+./setup.sh aws connect --dist +E2ABC123         <span class="c"># add one</span>
+./setup.sh aws connect --dist none              <span class="c"># disconnect all</span></code></pre>
+
+<p>To check what is connected from the AWS side, independent of Terraform state:</p>
+
+<pre><code>aws logs describe-deliveries --region us-east-1 \
+  --query 'deliveries[].[deliverySourceName,deliveryDestinationArn]' --output table
+aws logs describe-delivery-sources --region us-east-1 \
+  --query 'deliverySources[].[name,resourceArns[0]]' --output table</code></pre>
+
+<p>Each connected distribution has one delivery whose destination ends in
+<code>&lt;name_prefix&gt;-firehose</code>. Disconnecting deletes that delivery, and the source too if the
+module created it; a source that was there first is left alone.</p>
+
+<h2 id="what-it-creates"><a class="anchor" href="#what-it-creates" aria-label="Link to this section">#</a>What the module creates</h2>
+
+<p>For reviewing before you apply it in a real account. Everything is prefixed with
+<code>name_prefix</code> and tagged <code>ManagedBy = obsero-ingestion</code>. Source:
+<a class="src" href="https://github.com/Obsero-ai/obsero-public/blob/main/aws/ingestion/main.tf"><code>aws/ingestion/main.tf</code></a> and <a class="src" href="https://github.com/Obsero-ai/obsero-public/blob/main/aws/ingestion/lambda.tf"><code>aws/ingestion/lambda.tf</code></a>.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Resource</th><th>How many</th><th>Why it exists</th></tr></thead>
+<tbody>
+<tr><td><code>aws_kinesis_firehose_delivery_stream.this</code></td><td>1</td><td>Buffers log records and POSTs batches to the adapter. Tagged <code>LogDeliveryEnabled = true</code> in standard mode &mdash; <a href="#gotchas">without it nothing is delivered</a>.</td></tr>
+<tr><td><code>aws_lambda_function.adapter</code> + <code>aws_lambda_function_url.adapter</code></td><td>1</td><td>Turns each log record into one Obsero event and returns Firehose's ack. <a href="#why-lambda">Why a Lambda at all</a>.</td></tr>
+<tr><td><code>aws_s3_bucket.backup</code></td><td>1</td><td>Batches the endpoint never accepted, after <code>retry_duration</code>. Expires after <code>backup_retention_days</code>.</td></tr>
+<tr><td><code>aws_cloudwatch_log_delivery_destination.this</code></td><td>1 (standard)</td><td>Points CloudFront standard logging at the Firehose. Shared by every connected distribution; free while idle.</td></tr>
+<tr><td><code>aws_cloudwatch_log_delivery_source.this</code></td><td>1 per connected distribution without one</td><td>Declares the distribution's access logs as a source. Skipped for distributions in <code>existing_delivery_sources</code>.</td></tr>
+<tr><td><code>aws_cloudwatch_log_delivery.this</code></td><td>1 per connected distribution</td><td>The connection itself: source &rarr; destination, with the fields in <code>standard_log_fields</code>.</td></tr>
+<tr><td>IAM roles, CloudWatch log groups</td><td>2 + 2</td><td>Firehose's role (backup bucket, logs, Kinesis in realtime) and the adapter's execution role; one log group each, kept <code>log_retention_days</code>.</td></tr>
+<tr><td><code>aws_kinesis_stream.this</code>, <code>aws_cloudfront_realtime_log_config.this</code></td><td>realtime only</td><td>The ~$11/month shard and the config you attach to cache behaviours.</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>Bad inputs fail at plan time, not as empty events: <code>terraform_data.validate_config</code> checks
+the log field lists and that every <code>existing_delivery_sources</code> key is also connected.</p>
 
 <h2 id="log-source"><a class="anchor" href="#log-source" aria-label="Link to this section">#</a>Which log source? The one real decision</h2>
 
@@ -163,7 +226,7 @@ path.</p>
 <h2 id="gotchas"><a class="anchor" href="#gotchas" aria-label="Link to this section">#</a>Before you trust the numbers</h2>
 
 <p>Four behaviours that are easy to mistake for bugs. All measured on a live deployment, all
-written up in <code>aws/NOTES.md</code>.</p>
+written up in <a class="src" href="https://github.com/Obsero-ai/obsero-public/blob/main/aws/NOTES.md"><code>aws/NOTES.md</code></a>.</p>
 
 <div class="aside caution" role="note"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg><div class="body">
   <p><b class="label">Real-time logs are best-effort</b></p>
@@ -261,7 +324,7 @@ Firehose only reaches $11/month at roughly 380M requests.</p>
 <pre><code>make destroy      <span class="c"># terraform destroy, then check nothing is left standing</span>
 make leftovers    <span class="c"># just tell me what is still deployed</span></code></pre>
 
-<p>Both call <code>destroy.sh</code>, which empties the S3 buckets first &mdash; Terraform refuses to
+<p>Both call <a class="src" href="https://github.com/Obsero-ai/obsero-public/blob/main/destroy.sh"><code>destroy.sh</code></a>, which empties the S3 buckets first &mdash; Terraform refuses to
 delete a bucket holding objects it did not create, and that is precisely what the backup bucket
 collects.</p>
 
@@ -270,6 +333,19 @@ collects.</p>
 reached Obsero. The demo site sets it to <code>true</code>, because nobody is going to replay
 those.</p>
 
+
+      <section class="srcbox" aria-label="Source on GitHub">
+        <p class="srcbox-title">Code on this page</p>
+        <ul>
+          <li><a href="https://github.com/Obsero-ai/obsero-public/blob/main/aws/ingestion/main.tf"><code>aws/ingestion/main.tf</code></a> <span>the pipeline: Firehose, log deliveries, backup bucket</span></li>
+          <li><a href="https://github.com/Obsero-ai/obsero-public/blob/main/aws/ingestion/variables.tf"><code>aws/ingestion/variables.tf</code></a> <span>every module input, with its validation</span></li>
+          <li><a href="https://github.com/Obsero-ai/obsero-public/blob/main/aws/ingestion/lambda/adapter/index.mjs"><code>aws/ingestion/lambda/adapter/index.mjs</code></a> <span>the adapter Lambda</span></li>
+          <li><a href="https://github.com/Obsero-ai/obsero-public/blob/main/aws/site/terraform/main.tf"><code>aws/site/terraform/main.tf</code></a> <span>the demo stack: mock site plus one module block</span></li>
+          <li><a href="https://github.com/Obsero-ai/obsero-public/blob/main/aws/NOTES.md"><code>aws/NOTES.md</code></a> <span>behaviour measured on live deployments</span></li>
+          <li><a href="https://github.com/Obsero-ai/obsero-public/blob/main/aws/AGENTS.md"><code>aws/AGENTS.md</code></a> <span>the AWS playbook for coding agents</span></li>
+        </ul>
+        <p class="srcbox-links"><a href="https://github.com/Obsero-ai/obsero-public/edit/main/docs/aws.html">Edit this page on GitHub</a><a href="aws.md">View as Markdown</a><a href="llms.txt">llms.txt for agents</a></p>
+      </section>
 
       <div class="helpful">
         <span>Was this page helpful?</span>
@@ -291,6 +367,8 @@ those.</p>
           <ul>
           <li><a href="#try-it">Try it without an AWS account</a></li>
           <li><a href="#wiring-it-in">Wiring it into your own distribution</a></li>
+          <li><a href="#connect">Connecting distributions you already run</a></li>
+          <li><a href="#what-it-creates">What the module creates</a></li>
           <li><a href="#log-source">Which log source? The one real decision</a></li>
           <li><a href="#gotchas">Before you trust the numbers</a></li>
           <li class="sub"><a href="#parsing">Two CloudFront parsing behaviours (realtime only)</a></li>

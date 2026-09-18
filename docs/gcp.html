@@ -9,6 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&amp;family=Roboto+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
 <link rel="stylesheet" href="assets/docs.css">
+<link rel="alternate" type="text/markdown" href="gcp.md" title="This page as Markdown">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='10' fill='%231a73e8'/%3E%3Ccircle cx='12' cy='12' r='4' fill='white'/%3E%3C/svg%3E">
 </head>
 <body>
@@ -229,7 +230,7 @@ empty <code>permissions</code> array back means none are granted:</p>
 
 <h3 id="apis"><a class="anchor" href="#apis" aria-label="Link to this section">#</a>APIs</h3>
 
-<p><code>setup.sh</code> checks these and offers to enable them:</p>
+<p><a class="src" href="https://github.com/Obsero-ai/obsero-public/blob/main/setup.sh"><code>setup.sh</code></a> checks these and offers to enable them:</p>
 
 <pre><code>gcloud services enable \
   compute.googleapis.com run.googleapis.com pubsub.googleapis.com \
@@ -348,6 +349,19 @@ no evidence of loss, far too small a sample to call it exact</li>
 <li>end-to-end latency beyond the observed ~30&ndash;60s</li>
 </ul>
 
+
+      <section class="srcbox" aria-label="Source on GitHub">
+        <p class="srcbox-title">Code on this page</p>
+        <ul>
+          <li><a href="https://github.com/Obsero-ai/obsero-public/blob/main/gcp/ingestion/main.tf"><code>gcp/ingestion/main.tf</code></a> <span>the pipeline: sink, Pub/Sub, Cloud Run adapter</span></li>
+          <li><a href="https://github.com/Obsero-ai/obsero-public/blob/main/gcp/ingestion/variables.tf"><code>gcp/ingestion/variables.tf</code></a> <span>every module input, with its validation</span></li>
+          <li><a href="https://github.com/Obsero-ai/obsero-public/blob/main/gcp/ingestion/adapter/index.mjs"><code>gcp/ingestion/adapter/index.mjs</code></a> <span>the Cloud Run adapter</span></li>
+          <li><a href="https://github.com/Obsero-ai/obsero-public/blob/main/gcp/site/terraform/main.tf"><code>gcp/site/terraform/main.tf</code></a> <span>the demo stack: mock site plus one module block</span></li>
+          <li><a href="https://github.com/Obsero-ai/obsero-public/blob/main/gcp/PERMISSIONS.md"><code>gcp/PERMISSIONS.md</code></a> <span>the IAM roles, and why Editor is not enough</span></li>
+          <li><a href="https://github.com/Obsero-ai/obsero-public/blob/main/gcp/NOTES.md"><code>gcp/NOTES.md</code></a> <span>behaviour measured on live deployments</span></li>
+        </ul>
+        <p class="srcbox-links"><a href="https://github.com/Obsero-ai/obsero-public/edit/main/docs/gcp.html">Edit this page on GitHub</a><a href="gcp.md">View as Markdown</a><a href="llms.txt">llms.txt for agents</a></p>
+      </section>
 
       <div class="helpful">
         <span>Was this page helpful?</span>

@@ -9,6 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&amp;family=Roboto+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
 <link rel="stylesheet" href="assets/docs.css">
+<link rel="alternate" type="text/markdown" href="index.md" title="This page as Markdown">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='10' fill='%231a73e8'/%3E%3Ccircle cx='12' cy='12' r='4' fill='white'/%3E%3C/svg%3E">
 </head>
 <body>
@@ -38,6 +39,7 @@
     <ul>
       <li><a class="navitem current" href="index.html" aria-current="page">Overview</a>
         <ul class="subnav">
+          <li><a href="#pick-your-path">Pick your path</a></li>
           <li><a href="#the-shape-of-it">The shape of it</a></li>
           <li><a href="#which-one-do-i-want">Which one do I want?</a></li>
           <li><a href="#whats-in-the-repo">What&#x27;s in the repo</a></li>
@@ -85,7 +87,7 @@ keep the parts that match your stack, throw away the rest.</p>
 <div class="cards">
   <a class="card" href="quickstart.html">
     <h3>Quickstart &rarr;</h3>
-    <p>One command, three steps: deploy a mock site, create the pipeline, tear it down.</p>
+    <p>One command, four steps: a mock site, the pipeline, connect it, tear it down.</p>
   </a>
   <a class="card" href="contract.html">
     <h3>The contract &rarr;</h3>
@@ -100,6 +102,47 @@ keep the parts that match your stack, throw away the rest.</p>
     <p>LB request logs &rarr; Pub/Sub &rarr; Cloud Run adapter. Named headers on the cheap path.</p>
   </a>
 </div>
+
+<h2 id="pick-your-path"><a class="anchor" href="#pick-your-path" aria-label="Link to this section">#</a>Pick your path</h2>
+
+<p>The same repo serves three kinds of reader. Start from the row that sounds like you.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>You are</th><th>Do this</th><th>Time</th></tr></thead>
+<tbody>
+<tr>
+  <td><strong>New to this</strong> &mdash; you want to see it work before you touch anything real</td>
+  <td>Follow <a href="quickstart.html#checklist">the quickstart checklist</a>. Every step says what to run and
+  what you should see. <a class="src" href="https://github.com/Obsero-ai/obsero-public/blob/main/setup.sh"><code>setup.sh</code></a> does the work; nothing needs editing.</td>
+  <td>~20 min, including the CDN deploy</td>
+</tr>
+<tr>
+  <td><strong>Already running a site</strong> on CloudFront &mdash; you want your real traffic</td>
+  <td><a href="quickstart.html#your-own-site">Skip the mock site</a>: deploy the pipeline, then pick your
+  distribution from the list. Your distribution is never modified.</td>
+  <td>~5 min</td>
+</tr>
+<tr>
+  <td><strong>Experienced with Terraform</strong> &mdash; you want the module in your own stack</td>
+  <td>Read <a href="aws.html#wiring-it-in">one module block</a> and <a href="aws.html#what-it-creates">what it
+  creates</a>, then the code itself: <a class="src" href="https://github.com/Obsero-ai/obsero-public/blob/main/aws/ingestion/main.tf"><code>aws/ingestion/main.tf</code></a> and the adapter,
+  <a class="src" href="https://github.com/Obsero-ai/obsero-public/blob/main/aws/ingestion/lambda/adapter/index.mjs"><code>aws/ingestion/lambda/adapter/index.mjs</code></a>. Or skip the infrastructure entirely and call
+  <a href="contract.html#obsero-mjs"><code>sendEvent</code></a> from wherever you already see requests.</td>
+  <td>an afternoon to review</td>
+</tr>
+<tr>
+  <td><strong>A coding agent</strong>, or working with one</td>
+  <td>Read <a class="src" href="https://github.com/Obsero-ai/obsero-public/blob/main/AGENTS.md"><code>AGENTS.md</code></a> in the repo, or <a href="llms.txt"><code>llms.txt</code></a> for these docs as
+  Markdown. <a href="#agents">More below</a>.</td>
+  <td>&mdash;</td>
+</tr>
+</tbody>
+</table>
+</div>
+
+<p>Every file path on these pages links to that file on GitHub, and each page ends with the code it
+describes &mdash; so you can check any claim here against the source.</p>
 
 <h2 id="the-shape-of-it"><a class="anchor" href="#the-shape-of-it" aria-label="Link to this section">#</a>The shape of it</h2>
 
@@ -165,11 +208,45 @@ does.</p>
 
 <h2 id="agents"><a class="anchor" href="#agents" aria-label="Link to this section">#</a>If you work with a coding agent</h2>
 
-<p>There are <code>AGENTS.md</code> files at the repo root and in each cloud directory. They
+<p>There are <a class="src" href="https://github.com/Obsero-ai/obsero-public/blob/main/AGENTS.md"><code>AGENTS.md</code></a> files at the repo root and in each cloud directory. They
 carry the contract, the setup order, the failure modes that look like bugs but are not, and the
 handful of things in the Terraform that must not be &ldquo;cleaned up&rdquo; because they fail
 silently when removed. Point your agent at them before it touches anything.</p>
 
+<div class="table-wrap">
+<table>
+<thead><tr><th>File</th><th>Read by</th><th>What is in it</th></tr></thead>
+<tbody>
+<tr><td><a class="src" href="https://github.com/Obsero-ai/obsero-public/blob/main/AGENTS.md"><code>AGENTS.md</code></a></td><td>any agent working in the repo</td><td>the contract, the menu and its flags, the order to debug in, the rules</td></tr>
+<tr><td><a class="src" href="https://github.com/Obsero-ai/obsero-public/blob/main/CLAUDE.md"><code>CLAUDE.md</code></a></td><td>Claude Code, which looks for this name</td><td>imports <a class="src" href="https://github.com/Obsero-ai/obsero-public/blob/main/AGENTS.md"><code>AGENTS.md</code></a>, so there is one source of truth</td></tr>
+<tr><td><a class="src" href="https://github.com/Obsero-ai/obsero-public/blob/main/aws/AGENTS.md"><code>aws/AGENTS.md</code></a>, <a class="src" href="https://github.com/Obsero-ai/obsero-public/blob/main/gcp/AGENTS.md"><code>gcp/AGENTS.md</code></a></td><td>an agent working on one cloud</td><td>symptom &rarr; cause &rarr; fix, and what each step of <a class="src" href="https://github.com/Obsero-ai/obsero-public/blob/main/setup.sh"><code>setup.sh</code></a> applies</td></tr>
+<tr><td><a href="llms.txt"><code>llms.txt</code></a></td><td>an agent reading these docs over the web</td><td>an index of every page as Markdown, and the key source files</td></tr>
+<tr><td><a href="llms-full.txt"><code>llms-full.txt</code></a></td><td>an agent that wants it all in one fetch</td><td>every page of these docs in one Markdown file</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>Every page is also published as Markdown next to its HTML &mdash; <code>quickstart.md</code> beside
+<code>quickstart.html</code> &mdash; and linked from the <em>View as Markdown</em> link at the bottom of the
+page. Agents that do the driving themselves can use the non-interactive forms:</p>
+
+<pre><code>./setup.sh aws pipeline --token &lt;tracking-id&gt;
+./setup.sh aws connect --dist &lt;distribution-id&gt;
+./setup.sh aws status</code></pre>
+
+<p>The rule in <a class="src" href="https://github.com/Obsero-ai/obsero-public/blob/main/AGENTS.md"><code>AGENTS.md</code></a> that matters most: an agent must never run an apply or a destroy
+without the developer's go-ahead on that specific command. These stacks cost real money.</p>
+
+
+      <section class="srcbox" aria-label="Source on GitHub">
+        <p class="srcbox-title">Code on this page</p>
+        <ul>
+          <li><a href="https://github.com/Obsero-ai/obsero-public/blob/main/README.md"><code>README.md</code></a> <span>the same overview, as it reads on GitHub</span></li>
+          <li><a href="https://github.com/Obsero-ai/obsero-public/blob/main/AGENTS.md"><code>AGENTS.md</code></a> <span>instructions for a coding agent working in the repo</span></li>
+          <li><a href="https://github.com/Obsero-ai/obsero-public/blob/main/obsero.mjs"><code>obsero.mjs</code></a> <span>the contract as code: build, validate and POST an event</span></li>
+        </ul>
+        <p class="srcbox-links"><a href="https://github.com/Obsero-ai/obsero-public/edit/main/docs/index.html">Edit this page on GitHub</a><a href="index.md">View as Markdown</a><a href="llms.txt">llms.txt for agents</a></p>
+      </section>
 
       <div class="helpful">
         <span>Was this page helpful?</span>
@@ -189,6 +266,7 @@ silently when removed. Point your agent at them before it touches anything.</p>
         <div class="toc-inner">
           <h2>On this page</h2>
           <ul>
+          <li><a href="#pick-your-path">Pick your path</a></li>
           <li><a href="#the-shape-of-it">The shape of it</a></li>
           <li><a href="#which-one-do-i-want">Which one do I want?</a></li>
           <li><a href="#whats-in-the-repo">What&#x27;s in the repo</a></li>

@@ -12,7 +12,9 @@ viewer -> CloudFront -> Firehose -> adapter Lambda (Function URL) -> POST /v1/ev
 ```
 ingestion/  the Terraform module a customer consumes. One module block.
 site/       the demo rig: private S3 bucket + CloudFront, and one module block
-            wiring the pipeline to it. Both halves are ONE Terraform stack.
+            for the pipeline. They are ONE Terraform stack, but the module does
+            not reference the site: it collects from connected_distribution_arns,
+            which can name any distribution in the account.
 test/       traffic harness, runs on the dev's machine. 19 client personas.
 ```
 
@@ -36,17 +38,37 @@ Both of those pass or fail in seconds and rule out most confusion before any
 infrastructure exists. Then:
 
 ```bash
-../setup.sh aws            # menu: 1 site, 2 pipeline, 3 destroy
+../setup.sh aws            # menu: 1 site, 2 pipeline, 3 connect, 4 destroy
 ```
 
 or the individual make targets (`make` alone lists them all): `deploy`,
-`traffic`, `check`, `logs`, `failures`, `destroy`, `leftovers`.
+`connect`, `traffic`, `check`, `logs`, `failures`, `destroy`, `leftovers`.
 
-`setup.sh`'s step 1 is a targeted apply of the site resources only
-(`aws_s3_object.site`, `aws_s3_bucket_policy.site`,
-`aws_cloudfront_distribution.site` and the two bucket settings). Step 2 is the
-plain untargeted apply, which adds `module.ingestion`. `make deploy` does both
-at once — fine, just slower to a first signal.
+What each step applies:
+
+| step | applies | notes |
+|---|---|---|
+| 1 site | `-target` the site resources (`aws_s3_object.site`, `aws_s3_bucket_policy.site`, `aws_cloudfront_distribution.site`, the two bucket settings) | no token needed |
+| 2 pipeline | `-target=module.ingestion` | prompts for the tracking ID; builds the pipeline idle if nothing is connected. Drops connected distributions that no longer exist. |
+| 3 connect | rewrites `connected_distribution_arns` and `existing_delivery_sources` in `site/terraform/terraform.tfvars`, then `-target=module.ingestion` | lists `aws cloudfront list-distributions` and `aws logs describe-delivery-sources` (in the stack region). Refuses while the token is the placeholder. |
+| 4 destroy | `../destroy.sh aws` | then clears both connection variables, so the next pipeline starts idle |
+
+`make deploy` is a full apply followed by `setup.sh aws connect --dist +<site id>`,
+so the mock site ends up connected.
+
+When you drive it yourself, use the flag forms and never the picker:
+
+```bash
+../setup.sh aws connect --dist E2ABC123,E3DEF456   # exactly this set
+../setup.sh aws connect --dist +E2ABC123           # add to what is connected
+../setup.sh aws connect --dist none                # disconnect all
+```
+
+Connecting never modifies a distribution. It adds a CloudWatch Logs delivery
+(standard logging v2) into the pipeline's Firehose. A distribution can have only
+one delivery source; if it already has one (the console names it
+`CreatedByCloudFront-<id>`), `setup.sh` records it in `existing_delivery_sources`
+and the module reuses it. Our own sources are named `<name_prefix>-<id>`.
 
 ### Preflight you should run yourself
 
@@ -79,7 +101,7 @@ If a dev wants to *verify* an agent rather than trust its User-Agent, they need
 `signature-agent` / `signature-input` / `signature` never arrive at all. Say
 that directly; it is not a tuning problem.
 
-`standard` needs `distribution_arn`. `realtime` instead exports
+`standard` collects from `distribution_arns` (may be empty). `realtime` instead exports
 `realtime_log_config_arn`, which the dev attaches to each cache behaviour they
 want logged — so it can be rolled out one path pattern at a time. Behaviours
 without the ARN emit nothing. Examples for both shapes are in
@@ -98,6 +120,10 @@ without the ARN emit nothing. Examples for both shapes are in
 | Adapter returns 429, events land in the backup bucket | Lambda concurrency exhausted | new accounts cap at **10 concurrent executions** account-wide, and at that ceiling `reserved_concurrent_executions` cannot be set at all. Nothing is lost — replay the backup bucket. Watch `Throttles`. |
 | `terraform destroy` refuses to delete a bucket | it holds objects Terraform did not create — exactly what the backup bucket collects | use `../destroy.sh aws`, which empties it first. The module keeps `backup_force_destroy = false` on purpose so a customer's destroy *stops* rather than discarding events that never reached Obsero. The demo site sets it to `true`. |
 | A distribution survives the destroy | CloudFront needs two operations minutes apart | `destroy.sh` reports it rather than pretending: disable it, wait for `Deployed`, then delete. |
+| `ConflictException` creating a delivery source | the distribution already has a standard logging v2 source not listed in `existing_delivery_sources` | re-run `../setup.sh aws connect`, which re-detects it. Never delete someone else's source to make room. |
+| apply fails on a connected distribution that does not exist | it was deleted, usually the mock site after a destroy/redeploy | steps 2 and 3 prune it automatically; or `connect --dist none` |
+| connect lists nothing | the CLI is on a different account, or lacks `cloudfront:ListDistributions` | `aws sts get-caller-identity`, then `aws cloudfront list-distributions` |
+| the picker refuses to run | bash < 4 (macOS ships 3.2) | `brew install bash`; `--dist` needs bash 4 too |
 | `sec-fetch-mode` is `cors` in a traffic run and `connection: keep-alive` appeared | Node's `fetch` overrides both | harness artefact only. Every User-Agent and every other header passes through untouched. |
 
 ## Verifying it actually works

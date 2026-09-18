@@ -624,3 +624,16 @@ ol.steps > li > h3:first-child { margin: 2px 0 10px; }
   border-radius: 0 0 8px 0;
 }
 .skip:focus { left: 0; }
+
+/* "Code on this page": the files the prose is about, on GitHub. */
+.srcbox {
+  margin: 40px 0 0; padding: 16px 20px;
+  border: 1px solid var(--divider); border-radius: 8px; background: var(--surface-alt);
+}
+.srcbox .srcbox-title { margin: 0 0 8px; font-family: var(--sans); font-weight: 500; color: var(--heading); }
+.srcbox ul { margin: 0; padding: 0; list-style: none; }
+.srcbox li { margin: 6px 0; overflow-wrap: anywhere; }
+.srcbox li span { color: var(--secondary); font-size: 14px; }
+.srcbox .srcbox-links { display: flex; flex-wrap: wrap; gap: 8px 20px; margin: 12px 0 0; font-size: 14px; }
+a.src code, .srcbox li a code { color: var(--blue); }
+a.src:hover code, .srcbox li a:hover code { text-decoration: underline; }

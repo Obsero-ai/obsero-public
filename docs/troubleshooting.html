@@ -9,6 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&amp;family=Roboto+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
 <link rel="stylesheet" href="assets/docs.css">
+<link rel="alternate" type="text/markdown" href="troubleshooting.md" title="This page as Markdown">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='10' fill='%231a73e8'/%3E%3Ccircle cx='12' cy='12' r='4' fill='white'/%3E%3C/svg%3E">
 </head>
 <body>
@@ -117,7 +118,7 @@ say?</li>
   <td><code>node obsero.mjs --token &lt;id&gt; --domain &lt;host&gt;</code>. One second to rule out.</td>
 </tr>
 <tr>
-  <td><code>setup.sh</code> step 2 refuses to apply</td>
+  <td><a class="src" href="https://github.com/Obsero-ai/obsero-public/blob/main/setup.sh"><code>setup.sh</code></a> step 2 refuses to apply</td>
   <td>The tracking ID in <code>terraform.tfvars</code> is still the placeholder <code>set-in-step-2</code></td>
   <td>Run step 2 and enter a real ID, or <code>./setup.sh &lt;cloud&gt; pipeline --token &lt;id&gt;</code>.</td>
 </tr>
@@ -177,9 +178,39 @@ say?</li>
   <td>Use <code>./destroy.sh aws</code>, which empties it first. The module keeps <code>backup_force_destroy = false</code> on purpose, so a real destroy <em>stops</em> rather than discarding events that never reached Obsero.</td>
 </tr>
 <tr>
+  <td>Connect says <code>could not list CloudFront distributions</code></td>
+  <td>Your AWS identity lacks <code>cloudfront:ListDistributions</code>, or the CLI is not logged in</td>
+  <td>Run <code>aws cloudfront list-distributions</code> yourself &mdash; its error names the missing permission.</td>
+</tr>
+<tr>
+  <td>Connect lists nothing, or not the distribution you expected</td>
+  <td>The CLI is pointed at a different account</td>
+  <td><code>aws sts get-caller-identity</code> shows which. Set <code>AWS_PROFILE</code> and re-run; distributions are global, so region does not matter here.</td>
+</tr>
+<tr>
+  <td>Apply fails with a <code>ConflictException</code> on a delivery source</td>
+  <td>The distribution already had a standard logging v2 source that was not passed in <code>existing_delivery_sources</code></td>
+  <td>Re-run <code>./setup.sh aws connect</code>: it re-reads the sources and fills the variable in. In your own Terraform, add the source's name there. Only one source per distribution is allowed.</td>
+</tr>
+<tr>
+  <td>Apply fails because a connected distribution does not exist</td>
+  <td>It was deleted &mdash; typically the mock site, destroyed and redeployed with a new ID</td>
+  <td>Steps 2 and 3 drop missing distributions automatically. By hand: <code>./setup.sh aws connect --dist none</code>, then connect again.</td>
+</tr>
+<tr>
+  <td>Connected, but nothing arrives from your own site</td>
+  <td>No traffic yet, or it has not been 90 seconds</td>
+  <td>Request a page, wait out the <a href="aws.html#gotchas">latency floor</a>, then <code>make -C aws logs</code>. <code>aws logs describe-deliveries --region us-east-1</code> confirms the delivery exists.</td>
+</tr>
+<tr>
+  <td>The connect picker says it needs bash 4</td>
+  <td>macOS ships bash 3.2</td>
+  <td><code>brew install bash</code>, then re-run. Or skip the picker: <code>./setup.sh aws connect --dist &lt;id&gt;</code> still needs bash 4, so use the Terraform variables directly.</td>
+</tr>
+<tr>
   <td>A CloudFront distribution survives the destroy</td>
   <td>CloudFront needs two operations, minutes apart</td>
-  <td>Disable it, wait for <code>Deployed</code>, then delete. <code>destroy.sh</code> reports it rather than pretending it can be done in one pass.</td>
+  <td>Disable it, wait for <code>Deployed</code>, then delete. <a class="src" href="https://github.com/Obsero-ai/obsero-public/blob/main/destroy.sh"><code>destroy.sh</code></a> reports it rather than pretending it can be done in one pass.</td>
 </tr>
 </tbody>
 </table>
@@ -234,12 +265,12 @@ say?</li>
 <tr>
   <td><code>terraform destroy</code> prompts for <code>project_id</code></td>
   <td>It has no default</td>
-  <td>Keep it in <code>gcp/site/terraform/terraform.tfvars</code>. <code>destroy.sh</code> checks for it up front.</td>
+  <td>Keep it in <code>gcp/site/terraform/terraform.tfvars</code>. <a class="src" href="https://github.com/Obsero-ai/obsero-public/blob/main/destroy.sh"><code>destroy.sh</code></a> checks for it up front.</td>
 </tr>
 <tr>
   <td>A service account survives <code>--sweep</code></td>
   <td>Service account IDs cap at 30 characters, so the module truncates the prefix to 21</td>
-  <td>A name match on the full prefix misses them. <code>destroy.sh</code> already truncates the same way; pass <code>--prefix</code> if you renamed things.</td>
+  <td>A name match on the full prefix misses them. <a class="src" href="https://github.com/Obsero-ai/obsero-public/blob/main/destroy.sh"><code>destroy.sh</code></a> already truncates the same way; pass <code>--prefix</code> if you renamed things.</td>
 </tr>
 <tr>
   <td>An external LB cannot be created at all</td>
@@ -252,13 +283,23 @@ say?</li>
 
 <h2 id="notes"><a class="anchor" href="#notes" aria-label="Link to this section">#</a>Where the measured behaviour lives</h2>
 
-<p><code>aws/NOTES.md</code> and <code>gcp/NOTES.md</code> record behaviour observed on live
+<p><a class="src" href="https://github.com/Obsero-ai/obsero-public/blob/main/aws/NOTES.md"><code>aws/NOTES.md</code></a> and <a class="src" href="https://github.com/Obsero-ai/obsero-public/blob/main/gcp/NOTES.md"><code>gcp/NOTES.md</code></a> record behaviour observed on live
 deployments rather than inferred from docs. They are separate from the READMEs because none of it is
 needed to <em>use</em> the modules &mdash; only to trust their numbers, or to hand-build a pipeline
 yourself.</p>
 
 <p>If you measure something new, add it there as well as here.</p>
 
+
+      <section class="srcbox" aria-label="Source on GitHub">
+        <p class="srcbox-title">Code on this page</p>
+        <ul>
+          <li><a href="https://github.com/Obsero-ai/obsero-public/blob/main/aws/NOTES.md"><code>aws/NOTES.md</code></a> <span>AWS behaviour measured on live deployments</span></li>
+          <li><a href="https://github.com/Obsero-ai/obsero-public/blob/main/gcp/NOTES.md"><code>gcp/NOTES.md</code></a> <span>GCP behaviour measured on live deployments</span></li>
+          <li><a href="https://github.com/Obsero-ai/obsero-public/blob/main/destroy.sh"><code>destroy.sh</code></a> <span>what --check and --sweep look for</span></li>
+        </ul>
+        <p class="srcbox-links"><a href="https://github.com/Obsero-ai/obsero-public/edit/main/docs/troubleshooting.html">Edit this page on GitHub</a><a href="troubleshooting.md">View as Markdown</a><a href="llms.txt">llms.txt for agents</a></p>
+      </section>
 
       <div class="helpful">
         <span>Was this page helpful?</span>

@@ -166,6 +166,13 @@ When you change behaviour that a dev depends on, update the matching page:
 | GCP pipeline, permissions or cost | `docs/gcp.html` |
 | a new failure mode you diagnosed | `docs/troubleshooting.html` **and** the cloud's `NOTES.md` |
 
+The build also writes a Markdown copy of every page (`docs/<page>.md`),
+`docs/llms.txt` and `docs/llms-full.txt` for agents reading the docs over the
+web, and links every repo path it finds in `<code>` to the file on GitHub. All of
+that is generated -- edit the HTML, never the `.md` files. A page's "Code on this
+page" box comes from `SOURCES` in `docs/build.py`; the build fails if one of
+those paths stops existing.
+
 `docs/assets/docs.css` and `docs/assets/docs.js` are the chrome: theme tokens
 (light and dark), the nav drawer, code-block copy buttons, the sidebar search
 and the TOC scrollspy. Every one of those degrades to plain working HTML if the
