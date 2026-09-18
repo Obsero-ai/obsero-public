@@ -33,6 +33,19 @@ locals {
 
   realtime = var.log_source == "realtime"
   standard = var.log_source == "standard"
+
+  # Every distribution to collect from, keyed by its ID so resource addresses
+  # read as ...["E2ABC123"] rather than a full ARN.
+  distributions = local.standard ? {
+    for arn in distinct(concat(var.distribution_arn == null ? [] : [var.distribution_arn], var.distribution_arns)) :
+    element(split("/", arn), 1) => arn
+  } : {}
+
+  # The subset that needs a delivery source of our own. The rest already have
+  # one, and CloudWatch Logs refuses a second for the same distribution.
+  owned_sources = {
+    for id, arn in local.distributions : id => arn if !contains(keys(var.existing_delivery_sources), arn)
+  }
 }
 
 # cs-uri-stem is what the adapter reports as `path`, and cs-headers is the
@@ -40,8 +53,8 @@ locals {
 resource "terraform_data" "validate_config" {
   lifecycle {
     precondition {
-      condition     = !local.standard || var.distribution_arn != null
-      error_message = "log_source = \"standard\" requires distribution_arn."
+      condition     = alltrue([for arn in keys(var.existing_delivery_sources) : contains(values(local.distributions), arn)])
+      error_message = "every key of existing_delivery_sources must also be listed in distribution_arns."
     }
     precondition {
       condition     = !local.realtime || (contains(var.log_fields, "cs-uri-stem") && contains(var.log_fields, "cs-method") && contains(var.log_fields, "sc-status"))
@@ -314,16 +327,19 @@ resource "aws_kinesis_firehose_delivery_stream" "this" {
 # ---------------------------------------------------------------------------
 
 resource "aws_cloudwatch_log_delivery_source" "this" {
-  count = local.standard ? 1 : 0
+  for_each = local.owned_sources
 
-  name         = "${var.name_prefix}-access-logs"
+  name         = "${var.name_prefix}-${each.key}"
   log_type     = "ACCESS_LOGS"
-  resource_arn = var.distribution_arn
+  resource_arn = each.value
   tags         = local.tags
 
   depends_on = [terraform_data.validate_config]
 }
 
+# One destination -- the Firehose -- shared by every connected distribution.
+# Created even with nothing connected: it costs nothing, and connecting later
+# is then just a source and a delivery.
 resource "aws_cloudwatch_log_delivery_destination" "this" {
   count = local.standard ? 1 : 0
 
@@ -337,9 +353,12 @@ resource "aws_cloudwatch_log_delivery_destination" "this" {
 }
 
 resource "aws_cloudwatch_log_delivery" "this" {
-  count = local.standard ? 1 : 0
+  for_each = local.distributions
 
-  delivery_source_name     = aws_cloudwatch_log_delivery_source.this[0].name
+  delivery_source_name = try(
+    var.existing_delivery_sources[each.value],
+    aws_cloudwatch_log_delivery_source.this[each.key].name,
+  )
   delivery_destination_arn = aws_cloudwatch_log_delivery_destination.this[0].arn
   record_fields            = var.standard_log_fields
   tags                     = local.tags

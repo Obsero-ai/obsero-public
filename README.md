@@ -107,39 +107,53 @@ it creates anything.
 ```
 Obsero ingestion -- aws
 
-  1) Deploy a mock site            a site worth collecting logs from
-  2) Create the ingestion pipeline  asks for your tracking ID
-  3) Destroy everything            the rig bills while it is up
+  1) Deploy the mock site          a site worth collecting logs from
+  2) Deploy the ingestion pipeline asks for your tracking ID
+  3) Connect                       pick distributions already in your account
+  4) Destroy everything            the rig bills while it is up
 
-  4) Send mock traffic and score what arrived
-  5) Status -- what is deployed right now
-  6) Switch cloud
+  5) Send mock traffic and score what arrived
+  6) Status -- what is deployed right now
+  7) Switch cloud
 ```
 
 **Step 1** puts a static site behind a real CDN, so there is traffic worth
-logging, and prints the URL. Nothing reaches Obsero yet.
+logging, and prints the URL. Nothing reaches Obsero yet. Skip it if you only
+want to collect from a site you already run.
 
-**Step 2** asks for your tracking ID, shows you the site it is about to collect
-from, offers to POST one test event to prove the ID is accepted, and then builds
-the pipeline. The ID is saved to `<cloud>/site/terraform/terraform.tfvars`
-(gitignored, `chmod 600`) because `terraform destroy` and every later apply need
-it too.
+**Step 2** asks for your tracking ID, offers to POST one test event to prove the
+ID is accepted, and then builds the pipeline on its own -- on AWS it does not
+need the mock site and starts out collecting from nothing. The ID is saved to
+`<cloud>/site/terraform/terraform.tfvars` (gitignored, `chmod 600`) because
+`terraform destroy` and every later apply need it too.
 
-**Step 3** calls `./destroy.sh`.
+**Step 3** (AWS) lists every CloudFront distribution in your account -- the mock
+site and anything you already run -- and lets you tick the ones to collect
+from. It never modifies a distribution: it adds a standard logging v2 delivery
+from each one into the pipeline's Firehose, and untick removes it again. If a
+distribution already has a standard logging v2 source (the CloudFront console
+creates one), that source is reused rather than replaced. On GCP the pipeline
+attaches to the mock site in step 2, so there is no step 3.
+
+**Step 4** calls `./destroy.sh`.
 
 Every item has a flag form, for CI or for scripting:
 
 ```bash
 ./setup.sh aws site
 ./setup.sh aws pipeline --token <tracking-id>
+./setup.sh aws connect --dist E2ABC123,E3DEF456   # exactly these; --dist none clears
+./setup.sh aws connect --dist +E2ABC123           # add one to what is connected
 ./setup.sh aws traffic -n 40
 ./setup.sh aws status
 ./setup.sh aws destroy --yes
 ```
 
-The site and the pipeline are **one Terraform stack**; step 1 is a targeted
-apply of the site half. `make deploy` in either cloud directory does both at
-once, and `make` alone lists every other task.
+The site, the pipeline and the connections are **one Terraform stack**; steps
+1-3 are targeted applies of their part of it, and step 3 records your picks as
+`connected_distribution_arns` in `terraform.tfvars`. `make deploy` in either
+cloud directory builds the site and the pipeline and connects the two, and
+`make` alone lists every other task.
 
 ## What's here
 

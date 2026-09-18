@@ -8,6 +8,11 @@ output "log_source" {
   value       = var.log_source
 }
 
+output "connected_distributions" {
+  description = "Distribution IDs whose standard logs flow into this pipeline. Empty in realtime mode, where you attach realtime_log_config_arn yourself."
+  value       = keys(local.distributions)
+}
+
 output "kinesis_stream_name" {
   description = "Stream CloudFront writes into. Null in standard mode, which has no Kinesis stream."
   value       = local.realtime ? aws_kinesis_stream.this[0].name : null

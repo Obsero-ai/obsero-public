@@ -9,8 +9,18 @@ output "bucket_name" {
 }
 
 output "distribution_id" {
-  description = "CloudFront distribution ID (step 2 attaches real-time logs here)."
+  description = "Mock site's CloudFront distribution ID."
   value       = aws_cloudfront_distribution.site.id
+}
+
+output "distribution_arn" {
+  description = "Mock site's CloudFront distribution ARN."
+  value       = aws_cloudfront_distribution.site.arn
+}
+
+output "connected_distributions" {
+  description = "Distribution IDs currently streaming into the pipeline."
+  value       = module.ingestion.connected_distributions
 }
 
 output "log_source" {

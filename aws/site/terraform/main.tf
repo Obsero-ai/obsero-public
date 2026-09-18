@@ -156,8 +156,11 @@ resource "aws_s3_bucket_policy" "site" {
 }
 
 # ---------------------------------------------------------------------------
-# The shippable pipeline, consumed exactly the way a customer consumes it:
-# one module block, one ARN wired into the cache behaviour above.
+# The shippable pipeline, consumed exactly the way a customer consumes it.
+#
+# It deliberately does not reference the mock site above: the pipeline can be
+# built on its own (setup.sh step 2) and then connected to any distribution in
+# the account, the mock site included (step 3), which writes the list below.
 # ---------------------------------------------------------------------------
 
 module "ingestion" {
@@ -168,8 +171,9 @@ module "ingestion" {
   site_token  = var.obsero_site_token
 
   # Pay-as-you-go: CloudFront delivers straight into Firehose, no Kinesis shard.
-  log_source       = "standard"
-  distribution_arn = aws_cloudfront_distribution.site.arn
+  log_source                = "standard"
+  distribution_arns         = var.connected_distribution_arns
+  existing_delivery_sources = var.existing_delivery_sources
 
   # This is a test rig: we want to see exactly what gets forwarded, and
   # `make destroy` must not stall on a backup bucket nobody will replay.

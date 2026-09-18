@@ -68,15 +68,18 @@ they do not need.
 
 ## Helping a dev set up
 
-`./setup.sh` is the path. It is one Terraform stack per cloud, applied in two
-halves, and the menu mirrors that:
+`./setup.sh` is the path. It is one Terraform stack per cloud, applied in
+parts, and the menu mirrors that:
 
 ```
-1) Deploy a mock site             targeted apply — site only, no Obsero involved
-2) Create the ingestion pipeline  prompts for the tracking ID, then full apply
-3) Destroy everything             calls ./destroy.sh
-4) Send mock traffic and score it
-5) Status
+1) Deploy the mock site           targeted apply -- site only, no Obsero involved
+2) Deploy the ingestion pipeline  prompts for the tracking ID; on AWS a targeted
+                                  apply of module.ingestion, built idle
+3) Connect (AWS only)             pick CloudFront distributions in the account;
+                                  writes connected_distribution_arns, re-applies
+4) Destroy everything             calls ./destroy.sh
+5) Send mock traffic and score it
+6) Status
 ```
 
 Non-interactive equivalents, useful when you are driving it yourself:
@@ -84,10 +87,17 @@ Non-interactive equivalents, useful when you are driving it yourself:
 ```bash
 ./setup.sh aws site
 ./setup.sh aws pipeline --token <tracking-id>
+./setup.sh aws connect --dist <id>[,<id>]   # exact set; "none" clears, "+<id>" adds
 ./setup.sh aws traffic -n 40
 ./setup.sh aws status
 ./setup.sh aws destroy --yes
 ```
+
+Connecting never modifies a distribution: it adds a standard logging v2
+delivery into the pipeline's Firehose. A distribution that already has a
+standard logging v2 source keeps it; step 3 records it in
+`existing_delivery_sources` and the module adds a delivery from it instead of
+creating a second source, which CloudWatch Logs refuses.
 
 The tracking ID is persisted to `<cloud>/site/terraform/terraform.tfvars`
 (gitignored, chmod 600) because `terraform destroy` and every later apply need

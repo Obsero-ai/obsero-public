@@ -127,18 +127,19 @@ you know your tracking ID is accepted before anything depends on it.</p>
 
 <pre><code>Obsero ingestion -- aws
 
-  1) Deploy a mock site            a site worth collecting logs from
-  2) Create the ingestion pipeline <span class="c">asks for your tracking ID</span>
-  3) Destroy everything            <span class="c">the rig bills while it is up</span>
+  1) Deploy the mock site          a site worth collecting logs from
+  2) Deploy the ingestion pipeline <span class="c">asks for your tracking ID</span>
+  3) Connect                       <span class="c">pick distributions already in your account</span>
+  4) Destroy everything            <span class="c">the rig bills while it is up</span>
 
-  4) Send mock traffic and score what arrived
-  5) Status -- what is deployed right now
-  6) Switch cloud
+  5) Send mock traffic and score what arrived
+  6) Status -- what is deployed right now
+  7) Switch cloud
   q) Quit</code></pre>
 
 <ol class="steps">
 <li>
-<h3>Deploy a mock site</h3>
+<h3>Deploy the mock site</h3>
 <p>A static site with real pages, behind a real CDN, so there is traffic worth logging. On AWS
 that is a private S3 bucket behind CloudFront; on GCP it is the same pages served from Cloud Run
 behind a global external Application Load Balancer with Cloud CDN in front.</p>
@@ -147,13 +148,14 @@ site URL when it finishes &mdash; open it.</p>
 <pre><code>==&gt; Site is up
    https://d1234abcd.cloudfront.net
 
-   <span class="c">Open it. Nothing is being sent to Obsero yet -- that is step 2.</span></code></pre>
+   <span class="c">Open it. Nothing is being sent to Obsero yet -- step 2 builds the pipeline,</span>
+   <span class="c">step 3 connects this site (or any other distribution) to it.</span></code></pre>
 <p>Budget 3&ndash;5 minutes on AWS (CloudFront is the slow part) and 5&ndash;8 on GCP, which also
 builds a container image on the way.</p>
 </li>
 
 <li>
-<h3>Create the ingestion pipeline</h3>
+<h3>Deploy the ingestion pipeline</h3>
 <p>This is the step that needs your tracking ID &mdash; the site token Obsero issued you, sent as
 the <code>x-obsero-key</code> header on every forwarded event. It is read hidden, then saved to
 <code>&lt;cloud&gt;/site/terraform/terraform.tfvars</code>, which is gitignored and
@@ -166,14 +168,17 @@ the <code>x-obsero-key</code> header on every forwarded event. It is read hidden
  v using wuJ7...oF_E
 
 ==&gt; Collecting from
-   https://d1234abcd.cloudfront.net
-   <span class="c">every request to this URL becomes one POST to Obsero</span>
+   <span class="c">nothing yet -- the pipeline is built idle, and step 3 connects it</span>
+   <span class="c">to any CloudFront distribution in your account, the mock site included</span>
 
    Send one test event first, to check the ID is accepted? [y/N]</code></pre>
 <p>Say yes. A rejected tracking ID means the pipeline forwards into nothing, silently &mdash;
 better to find out in one second than after a ten-minute apply. Then the pipeline goes up: on
 AWS, CloudFront standard logs into Firehose into an adapter Lambda; on GCP, load balancer request
 logs through a Log Router sink into Pub/Sub into a Cloud Run adapter.</p>
+<p>On AWS the pipeline does not need the mock site and is built collecting from nothing; step 3
+decides where it collects from. On GCP it attaches to the mock site's backend service here, and
+builds the site too if step 1 has not run.</p>
 <div class="aside note" role="note"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/></svg><div class="body">
   <p><b class="label">Give it a minute before you judge it</b></p>
   <p><strong>AWS:</strong> first events land in 60&ndash;90 seconds. CloudFront flushes
@@ -181,6 +186,28 @@ logs through a Log Router sink into Pub/Sub into a Cloud Run adapter.</p>
   <p><strong>GCP:</strong> the header allow-list takes several minutes to reach the edge. Events
   that arrive headerless right after an apply are propagation, not breakage.</p>
 </div></div></li>
+
+<li>
+<h3>Connect (AWS)</h3>
+<p>Lists every CloudFront distribution in your account &mdash; the mock site and anything you
+already run &mdash; and lets you tick the ones the pipeline collects from. Untick one to
+disconnect it.</p>
+<pre><code>==&gt; CloudFront distributions in this account
+
+   1) [x] E1A2B3C4D5E6F7  d1234abcd.cloudfront.net
+             <span class="c">the mock site</span>
+   2) [ ] E9Z8Y7X6W5V4U3  acme.com,www.acme.com
+             <span class="c">reuses its existing logging source "CreatedByCloudFront-E9Z8Y7X6W5V4U3"</span>
+
+   <span class="c">numbers toggle (e.g. "1 3"), a = all, n = none, Enter = done, q = cancel</span>
+Connect: 2</code></pre>
+<p>Your distributions are never modified. Connecting adds a CloudFront standard logging v2
+delivery from the distribution into the pipeline's Firehose. A distribution can have only one
+standard logging v2 source, so if it already has one &mdash; the CloudFront console creates it the
+first time anyone turns that logging on &mdash; it is reused and left in place on disconnect.</p>
+<p>The picks are saved as <code>connected_distribution_arns</code> in
+<code>terraform.tfvars</code>, so every later apply keeps them.</p>
+</li>
 
 <li>
 <h3>Destroy everything</h3>
@@ -235,20 +262,23 @@ make personas                        <span class="c"># list them</span></code></
 
 <pre><code>./setup.sh aws site
 ./setup.sh aws pipeline --token &lt;tracking-id&gt;
+./setup.sh aws connect --dist E1A2B3C4D5E6F7   <span class="c"># exactly these; --dist none clears</span>
+./setup.sh aws connect --dist +E9Z8Y7X6W5V4U3  <span class="c"># add one to what is connected</span>
 ./setup.sh aws traffic -n 40
 ./setup.sh aws status
 ./setup.sh aws destroy --yes</code></pre>
 
 <p>Or skip <code>setup.sh</code> entirely and use the make targets directly &mdash; <code>make</code>
-with no argument in either cloud directory lists them all. <code>make deploy</code> is steps 1 and 2
-in a single apply; <code>make e2e</code> is deploy, traffic, wait, score.</p>
+with no argument in either cloud directory lists them all. <code>make deploy</code> is steps 1&ndash;3
+for the mock site in one go; <code>make e2e</code> is deploy, traffic, wait, score.</p>
 
 <h2 id="what-setup-does"><a class="anchor" href="#what-setup-does" aria-label="Link to this section">#</a>What setup.sh is actually doing</h2>
 
-<p>Worth knowing, because it explains the one thing that looks odd: the site and the pipeline are
-<strong>one Terraform stack</strong>, not two. Step 1 is a targeted apply of the site resources
-only; step 2 is the plain untargeted apply, which adds the <code>module.ingestion</code> block.
-That split exists purely to get you a working URL before you have to think about tokens.</p>
+<p>Worth knowing, because it explains the one thing that looks odd: the site, the pipeline and
+its connections are <strong>one Terraform stack</strong>, not three. Step 1 is a targeted apply
+of the site resources only. On AWS, step 2 is a targeted apply of the <code>module.ingestion</code>
+block, which does not reference the site, and step 3 re-applies that same module with a new
+<code>connected_distribution_arns</code> list. On GCP, step 2 is the plain untargeted apply.</p>
 
 <p>Because both stacks declare <code>obsero_site_token</code> with no default, step 1 writes the
 placeholder <code>set-in-step-2</code> into <code>terraform.tfvars</code> so it can plan at all.

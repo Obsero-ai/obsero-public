@@ -6,3 +6,6 @@ obsero_site_token = "your-site-token"
 # obsero_ingest_url = "https://analytics.obsero.ai/v1/events"
 # project           = "agent-analytics-mock-site"
 # region            = "us-east-1"
+
+# Written by ./setup.sh aws connect -- distributions the pipeline collects from:
+# connected_distribution_arns = ["arn:aws:cloudfront::123456789012:distribution/E2ABC123"]

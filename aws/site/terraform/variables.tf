@@ -21,3 +21,15 @@ variable "obsero_site_token" {
   type        = string
   sensitive   = true
 }
+
+variable "connected_distribution_arns" {
+  description = "CloudFront distributions whose request logs flow into the pipeline. setup.sh step 3 writes this; any distribution in the account works, not just the mock site."
+  type        = list(string)
+  default     = []
+}
+
+variable "existing_delivery_sources" {
+  description = "Connected distributions that already had a standard logging v2 source, as ARN -> source name. setup.sh step 3 fills this in."
+  type        = map(string)
+  default     = {}
+}

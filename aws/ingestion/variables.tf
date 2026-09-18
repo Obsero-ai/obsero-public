@@ -14,7 +14,8 @@ variable "log_source" {
 
       "standard" - CloudFront standard logging v2 delivered straight to Firehose.
                    Pay-as-you-go, no idle cost, but CloudFront only exposes
-                   User-Agent, Referer, Cookie and Host. Requires distribution_arn.
+                   User-Agent, Referer, Cookie and Host. Connect distributions
+                   with distribution_arns.
 
       "realtime" - CloudFront real-time logs via a Kinesis Data Stream. Carries
                    the FULL viewer header set (cs-headers), including Web Bot Auth
@@ -33,9 +34,26 @@ variable "log_source" {
 }
 
 variable "distribution_arn" {
-  description = "CloudFront distribution ARN to collect logs from. Required when log_source is \"standard\"; ignored for \"realtime\"."
+  description = "Deprecated: use distribution_arns. A single CloudFront distribution ARN to collect logs from; merged into distribution_arns."
   type        = string
   default     = null
+}
+
+variable "distribution_arns" {
+  description = "CloudFront distribution ARNs to collect logs from in \"standard\" mode. May be empty: the pipeline then exists but receives nothing until one is connected. Ignored for \"realtime\"."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for arn in var.distribution_arns : can(regex("^arn:aws:cloudfront::[0-9]{12}:distribution/[A-Z0-9]+$", arn))])
+    error_message = "distribution_arns must be CloudFront distribution ARNs (arn:aws:cloudfront::<account>:distribution/<id>)."
+  }
+}
+
+variable "existing_delivery_sources" {
+  description = "Distributions that already have a standard logging v2 delivery source (for example one the CloudFront console created), as distribution ARN -> source name. CloudWatch Logs allows only one source per distribution, so for these the module adds a delivery from the existing source instead of creating its own. The existing source is never modified or deleted. Keys must also appear in distribution_arns."
+  type        = map(string)
+  default     = {}
 }
 
 variable "standard_log_fields" {

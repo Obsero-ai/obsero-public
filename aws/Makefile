@@ -32,9 +32,14 @@ init:
 plan:
 	$(TF) plan
 
-## deploy: apply the test site and the ingestion pipeline
+## deploy: apply the test site and the pipeline, and connect the two
 deploy:
 	$(TF) apply -auto-approve
+	@../setup.sh aws connect --yes --dist +$$($(TF) output -raw distribution_id)
+
+## connect: pick which CloudFront distributions in the account feed the pipeline
+connect:
+	@../setup.sh aws connect
 
 ## url: print the deployed site URL
 url:
@@ -85,4 +90,4 @@ destroy:
 leftovers:
 	@../destroy.sh aws --check
 
-.PHONY: help test event leftovers init plan deploy url traffic check personas e2e logs failures fmt validate destroy
+.PHONY: help test event leftovers init plan deploy connect url traffic check personas e2e logs failures fmt validate destroy

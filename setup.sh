@@ -5,16 +5,20 @@
 #   ./setup.sh                          # menu
 #   ./setup.sh aws                      # menu, AWS preselected
 #   ./setup.sh aws site                 # 1: deploy the mock site
-#   ./setup.sh aws pipeline             # 2: create the ingestion pipeline
+#   ./setup.sh aws pipeline             # 2: deploy the ingestion pipeline
 #   ./setup.sh aws pipeline --token ID  # 2, without the prompt (CI)
-#   ./setup.sh aws destroy              # 3: tear it all down
+#   ./setup.sh aws connect              # 3: pick distributions in your account
+#   ./setup.sh aws connect --dist E1,E2 # 3, without the picker ("none" clears,
+#                                       #    "+E3" adds to what is connected)
+#   ./setup.sh aws destroy              # 4: tear it all down
 #   ./setup.sh gcp status               # what is deployed right now
 #   ./setup.sh aws traffic              # send mock traffic, then score it
 #
-# Steps 1 and 2 are two halves of one Terraform stack, applied in order: the
-# site first, so there is traffic worth logging, then the ingestion module that
-# ships those logs to Obsero. Step 2 is the only one that needs your tracking
-# ID -- nothing before it talks to Obsero at all.
+# On AWS the three steps are independent: the mock site, the pipeline, and the
+# connection between the pipeline and any CloudFront distributions already in
+# your account -- the mock site is just one of them. Step 2 is the only one
+# that needs your tracking ID. On GCP the pipeline attaches to the mock site
+# directly, so there is no step 3.
 #
 # Tearing down is ./destroy.sh, which this script calls for you.
 set -euo pipefail
@@ -28,6 +32,7 @@ PLACEHOLDER="set-in-step-2"
 CLOUD=""
 ACTION=""
 TOKEN=""
+DISTS=""
 ASSUME_YES=false
 N="${N:-40}"
 
@@ -47,7 +52,7 @@ ok()   { printf '%s v%s %s\n' "$GREEN" "$OFF" "$*"; }
 hint() { printf '   %s%s%s\n' "$DIM" "$*" "$OFF"; }
 
 usage() {
-  sed -n '3,19p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '3,23p' "$0" | sed 's/^# \{0,1\}//'
   exit "${1:-0}"
 }
 
@@ -58,10 +63,12 @@ while [[ $# -gt 0 ]]; do
     aws|gcp)  CLOUD="$1" ;;
     site|1)       ACTION=site ;;
     pipeline|2)   ACTION=pipeline ;;
-    destroy|3)    ACTION=destroy ;;
-    traffic|4)    ACTION=traffic ;;
-    status|5)     ACTION=status ;;
+    connect|3)    ACTION=connect ;;
+    destroy|4)    ACTION=destroy ;;
+    traffic|5)    ACTION=traffic ;;
+    status|6)     ACTION=status ;;
     --token)  TOKEN="${2:-}"; shift ;;
+    --dist)   DISTS="${DISTS:+$DISTS,}${2:-}"; shift ;;
     -n|--count) N="${2:-40}"; shift ;;
     -y|--yes) ASSUME_YES=true ;;
     -h|--help) usage 0 ;;
@@ -116,6 +123,36 @@ tfvar_set() {
     printf '%s = "%s"\n' "$key" "$value" >> "$file"
   fi
   chmod 600 "$file"
+}
+
+# Lists and maps are written on one line each, so they can be replaced whole.
+tfvar_set_raw() {
+  local file="$1" key="$2" hcl="$3"
+  touch "$file"; chmod 600 "$file"
+  awk -v k="$key" '$0 !~ "^[[:space:]]*"k"[[:space:]]*=" { print }' "$file" > "$file.tmp" && mv "$file.tmp" "$file"
+  printf '%s = %s\n' "$key" "$hcl" >> "$file"
+  chmod 600 "$file"
+}
+
+# Reads a secret into the variable named $1, echoing one * per character so a
+# paste visibly landed. Backspace works. Without a terminal, reads plainly.
+read_secret() {
+  local -n _out=$1
+  local ch
+  _out=""
+  if [[ ! -t 0 ]]; then read -r _out; return; fi
+  while IFS= read -rsn1 ch; do
+    case "$ch" in
+      "") break ;;                         # Enter
+      $'\x7f'|$'\b')                       # Backspace
+        if [[ -n "$_out" ]]; then _out="${_out%?}"; printf '\b \b'; fi ;;
+      $'\r'|$'\n') break ;;
+      *) _out+="$ch"; printf '*' ;;
+    esac
+  done
+  echo
+  [[ -n "$_out" ]] && say "   ${DIM}got ${#_out} characters: $(mask "$_out")${OFF}"
+  return 0
 }
 
 mask() {
@@ -277,7 +314,12 @@ action_site() {
   step "Site is up"
   printf '   %s%s%s\n' "$BOLD$BLUE" "$url" "$OFF"
   say ""
-  hint "Open it. Nothing is being sent to Obsero yet -- that is step 2."
+  if [[ "$cloud" == "aws" ]]; then
+    hint "Open it. Nothing is being sent to Obsero yet -- step 2 builds the pipeline,"
+    hint "step 3 connects this site (or any other distribution) to it."
+  else
+    hint "Open it. Nothing is being sent to Obsero yet -- that is step 2."
+  fi
   [[ "$cloud" == "gcp" ]] && hint "A new LB IP can take a few minutes to answer. A 404 early on is propagation."
   return 0
 }
@@ -309,8 +351,8 @@ action_pipeline() {
   fi
 
   while [[ -z "$TOKEN" ]]; do
-    printf '   Tracking ID: '
-    read -rs TOKEN; echo
+    printf '   Tracking ID (paste, then Enter): '
+    read_secret TOKEN
     [[ -n "$TOKEN" ]] || warn "cannot be empty"
   done
   ok "using $(mask "$TOKEN")"
@@ -323,7 +365,17 @@ action_pipeline() {
   # --- the site it will be collecting from ---
   local url; url="$(site_url "$cloud")"
   step "Collecting from"
-  if [[ -n "$url" ]]; then
+  if [[ "$cloud" == "aws" ]]; then
+    prune_connections || return 1
+    local arns; arns="$(connected_arns)"
+    if [[ -n "$arns" ]]; then
+      local arn; for arn in $arns; do printf '   %s%s%s\n' "$BOLD$BLUE" "${arn##*/}" "$OFF"; done
+      hint "every request to these distributions becomes one POST to Obsero"
+    else
+      say "   ${DIM}nothing yet -- the pipeline is built idle, and step 3 connects it${OFF}"
+      hint "to any CloudFront distribution in your account, the mock site included"
+    fi
+  elif [[ -n "$url" ]]; then
     printf '   %s%s%s\n' "$BOLD$BLUE" "$url" "$OFF"
     hint "every request to this URL becomes one POST to Obsero"
   else
@@ -347,20 +399,28 @@ action_pipeline() {
   step "Building the ingestion pipeline"
   if [[ "$cloud" == "aws" ]]; then
     hint "CloudFront standard logs -> Firehose -> adapter Lambda -> POST /v1/events"
+    # Only the pipeline: the mock site is step 1 and is not needed here.
+    apply_pipeline || return 1
   else
     hint "LB request logs -> Log Router sink -> Pub/Sub -> Cloud Run adapter -> POST /v1/events"
+    tf "$cloud" apply -auto-approve -input=false
   fi
-  tf "$cloud" apply -auto-approve -input=false
 
   step "Pipeline is live"
-  printf '   %-18s %s%s%s\n' "site" "$BOLD$BLUE" "$(site_url "$cloud")" "$OFF"
   if [[ "$cloud" == "aws" ]]; then
-    printf '   %-18s %s\n' "log source" "$(tf_output aws log_source)"
     printf '   %-18s %s\n' "adapter" "$(tf_output aws adapter_function)"
+    printf '   %-18s %s\n' "firehose" "$(tf_output aws firehose_stream)"
+    printf '   %-18s %s\n' "connected" "$(connected_ids_display)"
     say ""
+    if [[ -z "$(connected_arns)" ]]; then
+      say "   Next: ${BOLD}./setup.sh aws connect${OFF}  to pick the distributions it collects from"
+      hint "the pipeline bills per record, so it costs next to nothing while idle"
+      return 0
+    fi
     hint "First events land in 60-90s: CloudFront flushes, then Firehose buffers for"
     hint "at least 60s. That is a floor, not a setting."
   else
+    printf '   %-18s %s%s%s\n' "site" "$BOLD$BLUE" "$(site_url "$cloud")" "$OFF"
     printf '   %-18s %s\n' "backend service" "$(tf_output gcp backend_service)"
     printf '   %-18s %s\n' "adapter" "$(tf_output gcp adapter_service)"
     say ""
@@ -373,7 +433,236 @@ action_pipeline() {
   return 0
 }
 
-# --- 3: destroy -------------------------------------------------------------
+# --- 3: connect (AWS) -------------------------------------------------------
+
+aws_region()  { local r; r="$(tfvar_get "$(tfvars aws)" region)";  printf '%s' "${r:-us-east-1}"; }
+aws_project() { local p; p="$(tfvar_get "$(tfvars aws)" project)"; printf '%s' "${p:-agent-analytics-mock-site}"; }
+
+# ARNs the pipeline is (or will be, on the next apply) connected to, one per
+# line. terraform.tfvars is the source of truth; the state follows it.
+connected_arns() {
+  grep -E '^[[:space:]]*connected_distribution_arns[[:space:]]*=' "$(tfvars aws)" 2>/dev/null \
+    | grep -oE 'arn:aws:cloudfront::[0-9]+:distribution/[A-Z0-9]+' || true
+}
+
+connected_ids_display() {
+  local arns out="" arn
+  arns="$(connected_arns)"
+  [[ -z "$arns" ]] && { printf 'nothing yet'; return; }
+  for arn in $arns; do out+="${out:+, }${arn##*/}"; done
+  printf '%s' "$out"
+}
+
+# Every CloudFront distribution in the account, one row each, fields split by
+# the ASCII unit separator -- not tab, which `read` collapses when a field such
+# as the comment is empty:
+#   id  arn  status  enabled  domain  aliases  comment  existing-source
+# existing-source names a standard logging v2 source the distribution already
+# has that this stack did not create -- the console makes one the first time
+# anyone turns standard logging v2 on. Only one is allowed, so we reuse it.
+DIST_ROWS=""
+load_distributions() {
+  local dists sources
+  if ! dists="$(aws cloudfront list-distributions --output json 2>&1)"; then
+    bad "could not list CloudFront distributions"
+    hint "$dists"
+    return 1
+  fi
+  sources="$(aws logs describe-delivery-sources --region "$(aws_region)" --output json 2>/dev/null || echo '{}')"
+  DIST_ROWS="$(DISTS_JSON="$dists" SOURCES_JSON="$sources" PROJECT="$(aws_project)" node -e '
+    const d = JSON.parse(process.env.DISTS_JSON || "{}");
+    const s = JSON.parse(process.env.SOURCES_JSON || "{}");
+    const clean = (v) => String(v ?? "").replace(/[\x1f\n]/g, " ");
+    const existing = {};
+    for (const src of s.deliverySources || []) {
+      if (src.logType !== "ACCESS_LOGS") continue;
+      for (const arn of src.resourceArns || []) {
+        const id = arn.split("/").pop();
+        if (src.name !== `${process.env.PROJECT}-${id}`) existing[arn] = src.name;
+      }
+    }
+    for (const it of (d.DistributionList || {}).Items || []) {
+      console.log([it.Id, it.ARN, it.Status, it.Enabled, it.DomainName,
+        ((it.Aliases || {}).Items || []).join(","), it.Comment, existing[it.ARN] || ""].map(clean).join("\x1f"));
+    }
+  ')"
+}
+
+# Drop connections whose distribution no longer exists -- after the mock site
+# is destroyed and redeployed, say, its old ARN would fail the whole apply.
+prune_connections() {
+  local arns keep=() arn
+  arns="$(connected_arns)"
+  [[ -z "$arns" ]] && return 0
+  load_distributions || return 1
+  for arn in $arns; do
+    if awk -F'\037' -v a="$arn" '$2 == a { found = 1 } END { exit !found }' <<< "$DIST_ROWS"; then
+      keep+=("$arn")
+    else
+      warn "${arn##*/} no longer exists in this account -- disconnecting it"
+    fi
+  done
+  [[ ${#keep[@]} -eq $(wc -w <<< "$arns") ]] && return 0
+  write_connections "${keep[@]}"
+}
+
+# Writes the chosen ARNs to terraform.tfvars, together with the existing
+# sources the module must reuse instead of creating its own. Needs DIST_ROWS.
+write_connections() {
+  local file list="" map="" arn src
+  file="$(tfvars aws)"
+  for arn in "$@"; do
+    list+="${list:+, }\"$arn\""
+    src="$(awk -F'\037' -v a="$arn" '$2 == a { print $8 }' <<< "$DIST_ROWS")"
+    [[ -n "$src" ]] && map+="${map:+, }\"$arn\" = \"$src\""
+  done
+  tfvar_set_raw "$file" connected_distribution_arns "[${list}]"
+  tfvar_set_raw "$file" existing_delivery_sources "{${map}}"
+}
+
+# The pipeline module only. It does not reference the mock site, so -target
+# keeps this from building the site too.
+apply_pipeline() {
+  tf aws apply -auto-approve -input=false -target=module.ingestion
+}
+
+# Numbered list of DIST_ROWS; $1 names an associative array of selected ARNs.
+print_distributions() {
+  local -n _sel=$1
+  local site_arn i=0 id arn status enabled domain aliases comment src mark note
+  site_arn="$(tf_output aws distribution_arn)"
+  say ""
+  while IFS=$'\x1f' read -r id arn status enabled domain aliases comment src; do
+    [[ -z "$id" ]] && continue
+    i=$((i + 1))
+    mark="[ ]"; [[ -n "${_sel[$arn]:-}" ]] && mark="${GREEN}[x]${OFF}"
+    printf '  %s%2d%s) %s %-15s %s\n' "$BOLD" "$i" "$OFF" "$mark" "$id" "${aliases:-$domain}"
+    note=""
+    [[ "$arn" == "$site_arn" ]] && note+="${BLUE}the mock site${OFF}  "
+    [[ -n "$comment" ]] && note+="\"$comment\"  "
+    [[ "${enabled,,}" != "true" ]] && note+="${YELLOW}disabled${OFF}  "
+    [[ "$status" != "Deployed" ]] && note+="${DIM}$status${OFF}  "
+    [[ -n "$aliases" ]] && note+="${DIM}$domain${OFF}  "
+    [[ -n "$note" ]] && printf '             %s\n' "$note"
+    [[ -n "$src" ]] && printf '             %sreuses its existing logging source "%s"%s\n' "$DIM" "$src" "$OFF"
+  done <<< "$DIST_ROWS"
+  say ""
+}
+
+action_connect() {
+  local cloud="$1"
+  if [[ "$cloud" != "aws" ]]; then
+    bad "connect is AWS-only"
+    hint "the GCP pipeline attaches straight to the mock site's backend service in step 2"
+    return 1
+  fi
+  if (( BASH_VERSINFO[0] < 4 )); then
+    bad "the picker needs bash 4 or newer (this is $BASH_VERSION)"
+    hint "macOS ships bash 3.2: brew install bash, then re-run"
+    return 1
+  fi
+  preflight aws || return 1
+  ensure_tfvars aws || return 1
+  ensure_init aws
+
+  local token; token="$(tfvar_get "$(tfvars aws)" obsero_site_token)"
+  if [[ -z "$token" || "$token" == "$PLACEHOLDER" ]]; then
+    bad "no tracking ID yet -- deploy the pipeline first (step 2)"
+    return 1
+  fi
+
+  step "CloudFront distributions in this account"
+  load_distributions || return 1
+  local ids=() arns=() id arn rest
+  while IFS=$'\x1f' read -r id arn rest; do
+    [[ -z "$id" ]] && continue
+    ids+=("$id"); arns+=("$arn")
+  done <<< "$DIST_ROWS"
+  if [[ ${#ids[@]} -eq 0 ]]; then
+    warn "there are none"
+    hint "step 1 deploys a mock site you can connect"
+    return 1
+  fi
+
+  local -A selected=() before=()
+  for arn in $(connected_arns); do selected[$arn]=1; before[$arn]=1; done
+
+  if [[ -n "$DISTS" ]]; then
+    # --dist E1,E2: exactly this set, no picker. "none" disconnects everything.
+    # --dist +E1: add to what is already connected instead.
+    [[ "$DISTS" == +* ]] || selected=()
+    local wanted want i found
+    IFS=',' read -ra wanted <<< "$DISTS"
+    for want in "${wanted[@]}"; do
+      want="${want#+}"
+      [[ -z "$want" || "$want" == "none" ]] && continue
+      found=""
+      for i in "${!ids[@]}"; do
+        if [[ "${ids[$i]}" == "$want" || "${arns[$i]}" == "$want" ]]; then
+          selected[${arns[$i]}]=1; found=1
+        fi
+      done
+      [[ -n "$found" ]] || { bad "no distribution $want in this account"; return 1; }
+    done
+    print_distributions selected
+  else
+    [[ -t 0 ]] || { bad "no terminal to pick from -- pass --dist <id>[,<id>] or --dist none"; return 1; }
+    local reply n
+    while true; do
+      print_distributions selected
+      hint "numbers toggle (e.g. \"1 3\"), a = all, n = none, Enter = done, q = cancel"
+      printf 'Connect: '
+      read -r reply || return 1
+      case "$reply" in
+        "") break ;;
+        q|quit) say "cancelled"; return 1 ;;
+        a|all) for arn in "${arns[@]}"; do selected[$arn]=1; done ;;
+        n|none) selected=() ;;
+        *)
+          for n in ${reply//,/ }; do
+            if [[ "$n" =~ ^[0-9]+$ ]] && (( n >= 1 && n <= ${#arns[@]} )); then
+              arn="${arns[$((n - 1))]}"
+              if [[ -n "${selected[$arn]:-}" ]]; then unset "selected[$arn]"; else selected[$arn]=1; fi
+            else
+              bad "no such distribution: $n"
+            fi
+          done ;;
+      esac
+    done
+  fi
+
+  local add=() remove=()
+  for arn in "${!selected[@]}"; do [[ -n "${before[$arn]:-}" ]] || add+=("$arn"); done
+  for arn in "${!before[@]}"; do [[ -n "${selected[$arn]:-}" ]] || remove+=("$arn"); done
+  if [[ ${#add[@]} -eq 0 && ${#remove[@]} -eq 0 ]]; then
+    ok "nothing to change"
+    return 0
+  fi
+
+  step "Changes"
+  for arn in "${add[@]}"; do say "   ${GREEN}+ connect${OFF}     ${arn##*/}"; done
+  for arn in "${remove[@]}"; do say "   ${RED}- disconnect${OFF}  ${arn##*/}"; done
+  hint "the distributions themselves are not modified: this adds or removes a"
+  hint "standard logging v2 delivery from each one into the pipeline's Firehose"
+  confirm "   Apply?" || { say "cancelled"; return 1; }
+
+  # Keep the order the account lists them in, so the tfvars diff stays stable.
+  local chosen=()
+  for arn in "${arns[@]}"; do [[ -n "${selected[$arn]:-}" ]] && chosen+=("$arn"); done
+  write_connections "${chosen[@]}"
+  apply_pipeline || return 1
+
+  step "Connected"
+  printf '   %-18s %s\n' "collecting from" "$(connected_ids_display)"
+  if [[ ${#chosen[@]} -gt 0 ]]; then
+    say ""
+    hint "First events land in 60-90s: CloudFront flushes, then Firehose buffers for"
+    hint "at least 60s. Watch them arrive with: make -C aws logs"
+  fi
+  return 0
+}
+
+# --- 4: destroy -------------------------------------------------------------
 
 action_destroy() {
   local cloud="$1"
@@ -383,10 +672,17 @@ action_destroy() {
   fi
   local args=("$cloud")
   $ASSUME_YES && args+=(--yes)
-  "$ROOT/destroy.sh" "${args[@]}"
+  "$ROOT/destroy.sh" "${args[@]}" || return 1
+
+  # The connections went with the pipeline. Forget them, so the next pipeline
+  # starts idle rather than reaching for a mock site that no longer exists.
+  if [[ "$cloud" == "aws" && -f "$(tfvars aws)" ]]; then
+    tfvar_set_raw "$(tfvars aws)" connected_distribution_arns "[]"
+    tfvar_set_raw "$(tfvars aws)" existing_delivery_sources "{}"
+  fi
 }
 
-# --- 4: traffic -------------------------------------------------------------
+# --- 5: traffic -------------------------------------------------------------
 
 action_traffic() {
   local cloud="$1"
@@ -395,6 +691,10 @@ action_traffic() {
 
   if ! pipeline_up "$cloud"; then
     warn "the ingestion pipeline is not deployed, so nothing will reach Obsero"
+    confirm "   Send traffic anyway?" || return 1
+  elif [[ "$cloud" == "aws" ]] && ! connected_arns | grep -qxF "$(tf_output aws distribution_arn)"; then
+    warn "the mock site is not connected to the pipeline, so nothing will reach Obsero"
+    hint "connect it with: ./setup.sh aws connect"
     confirm "   Send traffic anyway?" || return 1
   fi
 
@@ -412,7 +712,7 @@ action_traffic() {
   make -C "$ROOT/$cloud" check
 }
 
-# --- 5: status --------------------------------------------------------------
+# --- 6: status --------------------------------------------------------------
 
 action_status() {
   local cloud="$1"
@@ -428,6 +728,15 @@ action_status() {
 
   if pipeline_up "$cloud"; then
     ok "pipeline    deployed"
+    if [[ "$cloud" == "aws" ]]; then
+      local connected
+      connected="$(tf aws output -json connected_distributions 2>/dev/null | tr -d '[]" \n' | sed 's/,/, /g' || true)"
+      if [[ -n "$connected" ]]; then
+        ok "connected   $connected"
+      else
+        say "   ${DIM}connected   nothing -- ./setup.sh aws connect${OFF}"
+      fi
+    fi
   else
     say "   ${DIM}pipeline    not deployed${OFF}"
   fi
@@ -468,13 +777,18 @@ menu() {
     say ""
     say "${BOLD}Obsero ingestion -- $CLOUD${OFF}"
     say ""
-    say "  ${BOLD}1${OFF}) Deploy a mock site            a site worth collecting logs from"
-    say "  ${BOLD}2${OFF}) Create the ingestion pipeline ${DIM}asks for your tracking ID${OFF}"
-    say "  ${BOLD}3${OFF}) Destroy everything            ${DIM}the rig bills while it is up${OFF}"
+    say "  ${BOLD}1${OFF}) Deploy the mock site          a site worth collecting logs from"
+    say "  ${BOLD}2${OFF}) Deploy the ingestion pipeline ${DIM}asks for your tracking ID${OFF}"
+    if [[ "$CLOUD" == "aws" ]]; then
+      say "  ${BOLD}3${OFF}) Connect                       ${DIM}pick distributions already in your account${OFF}"
+    else
+      say "  ${DIM}3) Connect                       aws only -- gcp attaches in step 2${OFF}"
+    fi
+    say "  ${BOLD}4${OFF}) Destroy everything            ${DIM}the rig bills while it is up${OFF}"
     say ""
-    say "  ${DIM}4) Send mock traffic and score what arrived${OFF}"
-    say "  ${DIM}5) Status -- what is deployed right now${OFF}"
-    say "  ${DIM}6) Switch cloud${OFF}"
+    say "  ${DIM}5) Send mock traffic and score what arrived${OFF}"
+    say "  ${DIM}6) Status -- what is deployed right now${OFF}"
+    say "  ${DIM}7) Switch cloud${OFF}"
     say "  ${DIM}q) Quit${OFF}"
     say ""
     printf 'Choose: '
@@ -483,14 +797,15 @@ menu() {
     case "$reply" in
       1) action_site "$CLOUD" || true ;;
       2) action_pipeline "$CLOUD" || true ;;
-      3) action_destroy "$CLOUD" || true ;;
-      4) action_traffic "$CLOUD" || true ;;
-      5) action_status "$CLOUD" || true ;;
-      6) pick_cloud ;;
+      3) action_connect "$CLOUD" || true ;;
+      4) action_destroy "$CLOUD" || true ;;
+      5) action_traffic "$CLOUD" || true ;;
+      6) action_status "$CLOUD" || true ;;
+      7) pick_cloud ;;
       q|quit|"") say "bye"; exit 0 ;;
       *) bad "no such option: $reply" ;;
     esac
-    TOKEN=""   # never reuse a prompt answer across menu choices
+    TOKEN=""; DISTS=""   # never reuse a prompt answer across menu choices
   done
 }
 

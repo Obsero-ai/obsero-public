@@ -22,12 +22,12 @@ module "obsero_ingestion" {
 
   name_prefix      = "acme-prod"
   site_token       = var.obsero_site_token
-  log_source       = "standard"
-  distribution_arn = aws_cloudfront_distribution.site.arn
+  log_source        = "standard"
+  distribution_arns = [aws_cloudfront_distribution.site.arn]
 }
 ```
 
-For `realtime`, drop `distribution_arn` and attach
+For `realtime`, drop `distribution_arns` and attach
 `module.obsero_ingestion.realtime_log_config_arn` to each cache behaviour you
 want logged. `examples/` has both shapes. The module never modifies your
 distribution either way.
@@ -71,7 +71,9 @@ X-Forwarded-For, because CloudFront exposes nothing else there.
 | Name | Default | Notes |
 |---|---|---|
 | `log_source` | `standard` | `standard` or `realtime`. |
-| `distribution_arn` | `null` | Required for `standard`, ignored for `realtime`. |
+| `distribution_arns` | `[]` | Distributions to collect from in `standard` mode. Empty is valid: the pipeline exists, idle, until you connect one. Ignored for `realtime`. |
+| `existing_delivery_sources` | `{}` | Distribution ARN -> name of a standard logging v2 source it already has (e.g. one the CloudFront console made). Only one source is allowed per distribution, so the module adds a delivery from that one instead. |
+| `distribution_arn` | `null` | Deprecated single-ARN form, merged into `distribution_arns`. |
 | `ingest_url` | staging `/v1/events` | Must be https. |
 | `sampling_rate` | `100` | Percent of requests logged. |
 
@@ -101,12 +103,12 @@ X-Forwarded-For, because CloudFront exposes nothing else there.
 | `tags` | `{}` | Merged onto taggable resources. |
 
 Bad configurations fail at plan time rather than shipping empty events — a
-missing `distribution_arn`, or a `log_fields` list without `cs-headers`, is a
+`existing_delivery_sources` key missing from `distribution_arns`, or a `log_fields` list without `cs-headers`, is a
 precondition error.
 
 ## Outputs
 
-`realtime_log_config_arn` (the one you attach), `log_source`,
+`realtime_log_config_arn` (the one you attach), `log_source`, `connected_distributions`,
 `kinesis_stream_name`, `kinesis_stream_arn`, `firehose_stream_name`,
 `firehose_stream_arn`, `adapter_function_name`, `adapter_log_group`,
 `backup_bucket`, `log_fields_in_order`.
