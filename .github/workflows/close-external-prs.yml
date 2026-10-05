@@ -1,0 +1,33 @@
+name: Close external pull requests
+
+# pull_request_target runs the workflow from main, so a first-time
+# contributor cannot block it by withholding Actions approval.
+# This job only reads the event payload. It does not check out the PR.
+on:
+  pull_request_target:
+    types: [opened, reopened]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  close-external:
+    name: Close if the author is not a collaborator
+    # MEMBER and OWNER are Obsero org members. COLLABORATOR is someone
+    # explicitly granted access. Bots (Dependabot) stay open.
+    if: >-
+      github.event.pull_request.user.type != 'Bot' &&
+      github.event.pull_request.author_association != 'OWNER' &&
+      github.event.pull_request.author_association != 'MEMBER' &&
+      github.event.pull_request.author_association != 'COLLABORATOR'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Close and comment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          gh pr close "$PR" --repo "${{ github.repository }}" --comment "$(cat <<'EOF'
+          This repository is public so it can be read and cloned. Pull requests are limited to Obsero members and collaborators, so this one has been closed.
+          EOF
+          )"
